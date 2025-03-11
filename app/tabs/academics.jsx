@@ -5,6 +5,7 @@ import {
   View,
   FlatList,
   Platform,
+  StatusBar,
 } from "react-native";
 import React, { useState, useMemo } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -176,6 +177,7 @@ const Academics = () => {
 
   return (
     <View style={styles.container}>
+      <StatusBar backgroundColor="#1075E9" barStyle="light-content"  />
       <SafeAreaView style={styles.wrapper}>
         <View style={styles.header}>
           <Text style={styles.title}>Academics</Text>
