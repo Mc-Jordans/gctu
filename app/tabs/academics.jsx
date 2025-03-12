@@ -23,6 +23,13 @@ const Academics = () => {
     setActiveOption(option);
   };
 
+  const courseCodes = useMemo(() => [
+    {
+      
+    }
+
+  ] )
+
   const courses = useMemo(
     () => [
       {
