@@ -1,60 +1,63 @@
-import { View } from 'react-native';
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { View } from "react-native";
+import { Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 const TabsLayout = () => {
   return (
-    <Tabs initialRouteName='home'
-      backBehavior='initialRoute'
+    <Tabs
+      initialRouteName="home"
+      backBehavior="initialRoute"
       screenOptions={{
         tabBarStyle: {
           height: 65,
-          position: 'absolute',
           borderTopWidth: 1,
-          borderTopColor: '#E5E7EB',
+          borderTopColor: "#E5E7EB",
+          position:'absolute',
         },
         tabBarShowLabel: true,
-        tabBarActiveTintColor: '#1E40AF',
-        tabBarInactiveTintColor: '#6B7280',
+        tabBarActiveTintColor: "#1E40AF",
+        tabBarInactiveTintColor: "#6B7280",
       }}
     >
       <Tabs.Screen
         name="academics"
         options={{
-          title: 'Academics',
+          title: "Academics",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons name="book-outline" size={24} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="schedule"
+        name="studentAction"
         options={{
-          title: 'Schedule',
+          title: "StudentAction",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" size={24} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="create-outline" size={24} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Home',
+          title: "Home",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <View style={{
-              width: 56,
-              height: 56,
-              backgroundColor: '#1E40AF',
-              borderRadius: 28,
-              marginBottom: 28,
-              justifyContent: 'center',
-              alignItems: 'center',
-              borderWidth: 4,
-              borderColor: '#fff',
-            }}>
+          tabBarIcon: ({ color }) => (
+            <View
+              style={{
+                width: 56,
+                height: 56,
+                backgroundColor: "#1E40AF",
+                borderRadius: 28,
+                marginBottom: 28,
+                justifyContent: "center",
+                alignItems: "center",
+                borderWidth: 4,
+                borderColor: "#fff",
+              }}
+            >
               <Ionicons name="home" size={24} color="#fff" />
             </View>
           ),
@@ -63,9 +66,9 @@ const TabsLayout = () => {
       <Tabs.Screen
         name="finance"
         options={{
-          title: 'Finance',
+          title: "Finance",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons name="card-outline" size={24} color={color} />
           ),
         }}
@@ -73,9 +76,9 @@ const TabsLayout = () => {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: "Profile",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons name="person-outline" size={24} color={color} />
           ),
         }}

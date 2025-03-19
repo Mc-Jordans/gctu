@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,128 +7,144 @@ import {
   Image,
   TouchableOpacity,
   Platform,
-  Animated,
-  StatusBar,
+  RefreshControl,
+  Dimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
+import BellIcon from "../../assets/SVG/bell";
 import ConfirmationModal from "../components/ConfirmationModal";
+import * as ImagePicker from "expo-image-picker";
+import { useAuth } from "../context/AuthContext";
+import { useNotifications } from "../context/NotificationsContext";
+import { useRouter } from "expo-router";
+
+const { width } = Dimensions.get("window");
 
 const Profile = () => {
-  // State for expandable cards
+  const [image, setImage] = useState(null);
   const [expandedCard, setExpandedCard] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const { signOut, user, studentProfile, fetchStudentProfile } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
+  const router = useRouter();
+  const {
+    notifications,
+    unreadCount,
+    announcements,
+    fetchNotifications,
+    fetchAnnouncements,
+  } = useNotifications();
 
-  // Animation values
-  const animatedHeight = useRef(new Animated.Value(0)).current;
-  const animatedRotation = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef(null);
 
-  // Animated values for header transparency
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
 
-  // Handle card toggle
-  const toggleCard = (cardName) => {
-    if (expandedCard === cardName) {
-      // Close card
-      Animated.parallel([
-        Animated.timing(animatedHeight, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-        Animated.timing(animatedRotation, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        setExpandedCard(null);
-      });
-    } else {
-      // Open card
-      setExpandedCard(cardName);
-      Animated.parallel([
-        Animated.timing(animatedHeight, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-        Animated.timing(animatedRotation, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
     }
   };
 
-  // Dynamic header opacity based on scroll
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0, 1],
-    extrapolate: "clamp",
-  });
+  // On refresh events
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (user) {
+        await fetchStudentProfile(user.id);
+        await fetchNotifications();
+        await fetchAnnouncements();
+      }
+    } catch (error) {
+      console.error("Error refreshing data:", error.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, fetchStudentProfile, fetchNotifications, fetchAnnouncements]);
 
-  // Rotation for icons
-  const iconRotation = animatedRotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "180deg"],
-  });
-
-  // Get max height for expanded content
-  const getExpandedHeight = (cardName) => {
-    if (expandedCard !== cardName) return 0;
-
-    return animatedHeight.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, cardName === "Emergency Contacts Info" ? 220 : 180],
-    });
+  const toggleCard = (cardName) => {
+    if (expandedCard === cardName) {
+      setExpandedCard(null);
+    } else {
+      setExpandedCard(cardName);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({
+          y: cardName === "Student Info" ? 0 : 150,
+          animated: true,
+        });
+      }, 100);
+    }
   };
 
-  // Card content based on title
+  const handleLogout = () => {
+    setModalVisible(true);
+  };
+
+  const confirmLogout = async () => {
+    try {
+      await signOut();
+      setModalVisible(false);
+      router.replace("/"); // Redirect to login
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  // Extract display name from profile or user data
+  const displayName =
+    studentProfile?.first_name && studentProfile?.last_name
+      ? `${studentProfile.first_name} ${studentProfile.last_name}`
+      : user?.user_metadata?.full_name || "Student";
+
   const renderCardContent = (title) => {
     switch (title) {
       case "Student Info":
         return (
-          <ScrollView
-            style={styles.cardContent}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-          >
+          <View style={styles.cardContent}>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Full Name</Text>
-              <Text style={styles.infoValue}>John Doe</Text>
+              <Text style={styles.infoValue}>{displayName}</Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Date of Birth</Text>
-              <Text style={styles.infoValue}>01/01/2000</Text>
+              <Text style={styles.infoValue}>
+                {studentProfile?.date_of_birth || "Not set"}
+              </Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Program</Text>
-              <Text style={styles.infoValue}>Computer Science</Text>
+              <Text style={styles.infoValue}>
+                {studentProfile?.program || "Not set"}
+              </Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Session</Text>
-              <Text style={styles.infoValue}>Morning</Text>
+              <Text style={styles.infoValue}>
+                {studentProfile?.session || "Not set"}
+              </Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Personal Email</Text>
-              <Text style={styles.infoValue}>example@gmail.com</Text>
+              <Text style={styles.infoValue}>
+                {studentProfile?.personal_email || user?.email || "Not set"}
+              </Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Phone number</Text>
-              <Text style={styles.infoValue}>0245009988</Text>
+              <Text style={styles.infoValue}>
+                {studentProfile?.phone_number || "Not set"}
+              </Text>
             </View>
-          </ScrollView>
+          </View>
         );
       case "Documents":
         return (
-          <ScrollView
-            style={styles.cardContent}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-            contentContainerStyle={{overflowY:'scroll',flexGrow:1}}
-          >
+          <View style={styles.cardContent}>
             <TouchableOpacity style={styles.documentItem}>
               <MaterialCommunityIcons
                 name="certificate"
@@ -147,18 +163,15 @@ const Profile = () => {
               <Text style={styles.documentText}>Matriculation Oath</Text>
               <Feather name="download" size={18} color="#298CFE" />
             </TouchableOpacity>
-          </ScrollView>
+          </View>
         );
       default:
         return null;
     }
   };
 
-  // Render a single card
   const renderCard = (title, icon) => {
     const isExpanded = expandedCard === title;
-    const expandHeight = getExpandedHeight(title);
-
     return (
       <View style={styles.cardWrapper} key={title}>
         <TouchableOpacity
@@ -168,41 +181,22 @@ const Profile = () => {
         >
           <View style={styles.cardTitleContainer}>
             {icon}
-            <Text style={styles.cardTitle}>{title}</Text>
+            <Text style={[styles.cardTitle, isExpanded && { color: "#FFF" }]}>
+              {title}
+            </Text>
           </View>
-          <Animated.View
-            style={{
-              transform: [
-                {
-                  rotate: iconRotation,
-                },
-              ],
-            }}
-          >
-            <Feather
-              name="chevron-down"
-              size={22}
-              color={isExpanded ? "#fff" : "#298CFE"}
-            />
-          </Animated.View>
+          <Feather
+            name="chevron-down"
+            size={22}
+            color={isExpanded ? "#fff" : "#298CFE"}
+            style={{ transform: [{ rotate: isExpanded ? "180deg" : "0deg" }] }}
+          />
         </TouchableOpacity>
-
-        <Animated.View
-          style={[
-            styles.expandableContent,
-            {
-              maxHeight: expandHeight,
-              opacity: expandedCard === title ? 1 : 0,
-            },
-          ]}
-        >
-          {renderCardContent(title)}
-        </Animated.View>
+        {isExpanded && renderCardContent(title)}
       </View>
     );
   };
 
-  // Card data with icons
   const cards = [
     {
       title: "Student Info",
@@ -226,114 +220,145 @@ const Profile = () => {
     },
   ];
 
-  // Stats items
+  // Calculate stats based on student profile data
   const statsItems = [
-    { title: "Courses", value: "6", icon: "book-outline" },
-    { title: "GPA", value: "3.8", icon: "school-outline" },
-    { title: "Attendance", value: "92%", icon: "time-outline" },
+    {
+      title: "Courses",
+      value: studentProfile?.courses_count || "0",
+      icon: "book-outline",
+    },
+    {
+      title: "GPA",
+      value: studentProfile?.cgpa || "0.0",
+      icon: "school-outline",
+    },
+    {
+      title: "Attendance",
+      value: studentProfile?.attendance || "0%",
+      icon: "time-outline",
+    },
   ];
 
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const handleLogout = () => {
-    setModalVisible(true);
-  };
-
-  const confirmLogout = () => {
-    setModalVisible(false);
-    console.log("User logged out"); // Replace with actual logout logic
-  };
-
-  const cancelLogout = () => {
-    setModalVisible(false);
-    console.log("Logout cancelled");
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar
-        barStyle={`${Platform.OS === "android" ? "light-content" : "dark-content"}`}
-        backgroundColor="#1075E9"
-      />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconButton}>
-            <Feather name="bell" size={22} color="#FFF" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
-            <Feather name="power" size={22} color="red" />
-          </TouchableOpacity>
-        </View>
-      </View>
-      {/* 
-      <Animated.ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
-        scrollEventThrottle={16}
-      > */}
-      <LinearGradient
-        colors={["#2563EB", "#3B82F6", "#60A5FA"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.profileHeader}
-      >
-        <View style={styles.profileImageContainer}>
-          <Image
-            source={require("../../assets/images/profileSample.jpg")}
-            style={styles.profileImage}
-          />
-          <TouchableOpacity style={styles.editImageButton}>
-            <Feather name="camera" size={16} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.profileName}>John Doe</Text>
-        <View style={styles.profileBadge}>
-          <Text style={styles.profileBadgeText}>Computer Science</Text>
-        </View>
-        <Text style={styles.profileId}>ID: 0123456789</Text>
-      </LinearGradient>
-
-      <View style={styles.statsContainer}>
-        {statsItems.map((item, index) => (
-          <View key={index} style={styles.statItem}>
-            <View style={styles.statIconContainer}>
-              <Ionicons name={item.icon} size={22} color="#298CFE" />
+    <View style={styles.container}>
+      <View style={styles.profileSection}>
+        <LinearGradient
+          colors={["#2563EB", "#3B82F6", "#60A5FA"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.profileHeader}
+        >
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Profile</Text>
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={() => router.push("/screens/notifications")}
+              >
+               <BellIcon/>
+                {unreadCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationCount}>
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={handleLogout}
+              >
+                <Feather name="power" size={22} color="red" />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.statValue}>{item.value}</Text>
-            <Text style={styles.statTitle}>{item.title}</Text>
           </View>
-        ))}
+
+          <View style={styles.profileImageContainer}>
+            <Image
+              source={
+                image
+                  ? { uri: image }
+                  : require("../../assets/images/profileSample.jpg")
+              }
+              style={styles.profileImage}
+            />
+            <TouchableOpacity
+              style={styles.editImageButton}
+              onPress={pickImage}
+            >
+              <Feather name="camera" size={16} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.profileName}>{displayName}</Text>
+          <View style={styles.profileBadge}>
+            <Text style={styles.profileBadgeText}>
+              {studentProfile?.program || "Not set"}
+            </Text>
+          </View>
+          <Text style={styles.profileId}>
+            ID: {studentProfile?.index_number || "Not set"}
+          </Text>
+        </LinearGradient>
+
+        <View style={styles.statsContainer}>
+          {statsItems.map((item, index) => (
+            <View key={index} style={styles.statItem}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name={item.icon} size={22} color="#298CFE" />
+              </View>
+              <Text style={styles.statValue}>{item.value}</Text>
+              <Text style={styles.statTitle}>{item.title}</Text>
+            </View>
+          ))}
+        </View>
       </View>
-      <ScrollView style={styles.container}>
+
+      <ScrollView
+        ref={scrollViewRef}
+        showsVerticalScrollIndicator={false}
+        style={styles.scrollableContent}
+        contentContainerStyle={styles.scrollContentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#3372EF"]}
+          />
+        }
+      >
         <View style={styles.cardsContainer}>
           {cards.map((card) => renderCard(card.title, card.icon))}
         </View>
 
         <View style={styles.actionsContainer}>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push("./edit-profile")}
+          >
             <Feather name="edit-2" size={18} color="#FFF" />
             <Text style={styles.actionButtonText}>Edit Profile</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push("./change-password")}
+          >
             <Feather name="lock" size={18} color="#FFF" />
             <Text style={styles.actionButtonText}>Change Password</Text>
           </TouchableOpacity>
         </View>
+        <View style={{ height: 30 }} />
       </ScrollView>
+
       <ConfirmationModal
         visible={modalVisible}
         onConfirm={confirmLogout}
-        onCancel={cancelLogout}
+        onCancel={() => setModalVisible(false)}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
       />
-      {/* </Animated.ScrollView> */}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -342,18 +367,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F9FAFB",
   },
+  profileSection: {
+    width: "100%",
+  },
+  profileHeader: {
+    position: "relative",
+    paddingTop: Platform.OS === "ios" ? 45 : 40,
+    paddingBottom: 30,
+    alignItems: "center",
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    height: Platform.OS === "ios" ? "63%" : "64%",
+  },
   header: {
-    position: "absolute",
-    top: "2.5%",
-    left: 0,
-    right: 0,
-    height: 60,
+    height: 50,
     paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    // backgroundColor: "#2563EB",
-    zIndex: 100,
+    width: "100%",
   },
   headerTitle: {
     fontSize: 18,
@@ -371,26 +403,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginLeft: 8,
+    position: "relative",
   },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  profileHeader: {
-    paddingTop: 30,
-    paddingBottom: 30,
+  notificationBadge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    backgroundColor: "red",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
     alignItems: "center",
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    paddingHorizontal: 4,
+  },
+  notificationCount: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "bold",
   },
   profileImageContainer: {
     position: "relative",
+    marginTop: 0,
     marginBottom: 16,
   },
   profileImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    borderWidth: 4,
+    borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.8)",
   },
   editImageButton: {
@@ -410,7 +451,9 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: "bold",
     color: "#FFF",
-    marginBottom: 8,
+    bottom: 10,
+    textAlign: "center",
+    paddingHorizontal: 20,
   },
   profileBadge: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
@@ -432,7 +475,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 10,
     marginTop: -20,
     backgroundColor: "#FFF",
     borderRadius: 16,
@@ -472,9 +515,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
   },
+  scrollableContent: {
+    flex: 1,
+    marginTop: -105,
+    backgroundColor: "#F9FAFB",
+  },
+  scrollContentContainer: {
+    paddingTop: 10,
+    paddingBottom: 60,
+  },
   cardsContainer: {
     paddingHorizontal: 20,
-    marginTop: 24,
   },
   cardWrapper: {
     marginBottom: 16,
@@ -514,14 +565,9 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     color: "#333",
   },
-  expandableContent: {
-    overflow: "hidden",
-  },
   cardContent: {
     padding: 16,
     backgroundColor: "#F9FAFB",
-    overflowY: "scroll",
-    
   },
   infoItem: {
     flexDirection: "row",
@@ -538,6 +584,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#1E293B",
     fontWeight: "500",
+    maxWidth: width * 0.5,
+    textAlign: "right",
   },
   documentItem: {
     flexDirection: "row",
@@ -552,42 +600,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
     color: "#1E293B",
-  },
-  contactContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-  },
-  contactHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  contactName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1E293B",
-    marginLeft: 8,
-  },
-  contactRelation: {
-    fontSize: 12,
-    color: "#64748B",
-    marginLeft: 8,
-  },
-  contactActions: {
-    flexDirection: "row",
-  },
-  contactButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(41, 140, 254, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 8,
   },
   actionsContainer: {
     flexDirection: "row",
@@ -606,22 +618,6 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: "#FFF",
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 20,
-    marginTop: 20,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: "#FF3B30",
-    borderRadius: 12,
-  },
-  logoutText: {
-    color: "#FF3B30",
     fontWeight: "600",
     marginLeft: 8,
   },

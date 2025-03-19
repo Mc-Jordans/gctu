@@ -1,23 +1,35 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "react-native";
+import { AuthProvider } from "./context/AuthContext";
+import { NotificationsProvider } from "./context/NotificationsContext";
 
- function RootLayout() {
-   return (
-     <>
-       <Stack>
-         <Stack.Screen
-           name="index"
-           options={{ headerShown: false }}
-         ></Stack.Screen>
-         <Stack.Screen
-           name="tabs"
-           options={{
-             headerShown: false,
- }}
-         ></Stack.Screen>
-       </Stack>
-     </>
-   );
+function RootLayout() {
+  return (
+    <>
+      <AuthProvider>
+        <NotificationsProvider>
+          <Stack>
+            <Stack.Screen
+              name="index"
+              options={{ headerShown: false }}
+            ></Stack.Screen>
+            <Stack.Screen
+              name="tabs"
+              options={{
+                headerShown: false,
+              }}
+            ></Stack.Screen>
+            <Stack.Screen
+              name="screens"
+              options={{
+                headerShown: false,
+              }}
+            ></Stack.Screen>
+          </Stack>
+        </NotificationsProvider>
+      </AuthProvider>
+    </>
+  );
 }
 
 export default RootLayout;

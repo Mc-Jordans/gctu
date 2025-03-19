@@ -6,23 +6,34 @@ import {
   FlatList,
   Platform,
   StatusBar,
+  RefreshControl,
 } from "react-native";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 export const Credits = () => {
   return <Text>15</Text>;
 };
 
-const Academics = () => {
-  const [activeOption, setActiveOption] = useState("Courses");
+const Academics = ({ route, navigation }) => {
+  const params = useLocalSearchParams();
+  const initialSection = params.section || "Courses";
+  const [activeOption, setActiveOption] = useState(initialSection);
   const [registeredCourses, setRegisteredCourses] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  React.useEffect(() => {
+    if (params.section) {
+      setActiveOption(params.section);
+    }
+  }, [params.section]);
 
   const handleSelect = (option) => {
     setActiveOption(option);
   };
-
 
   const courses = useMemo(
     () => [
@@ -54,6 +65,16 @@ const Academics = () => {
     ],
     []
   );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Simulate a network request
+    setTimeout(() => {
+      // You would typically fetch fresh data here
+      // For now, we'll just reset the refreshing state
+      setRefreshing(false);
+    }, 1500);
+  }, []);
 
   const handleRegisterCourse = (courseCode) => {
     if (registeredCourses.includes(courseCode)) {
@@ -155,6 +176,16 @@ const Academics = () => {
             overScrollMode="always"
             decelerationRate={Platform.OS === "ios" ? "normal" : 0.98}
             ListFooterComponent={<View style={{ height: 100 }} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={["rgb(71, 131, 235)"]} // Android
+                tintColor="rgb(71, 131, 235)" // iOS
+                title="Refreshing..." // iOS
+                titleColor="rgb(71, 131, 235)" // iOS
+              />
+            }
           />
         );
       case "Exams":
@@ -178,9 +209,19 @@ const Academics = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar backgroundColor="#1075E9" barStyle="light-content"  />
-      <SafeAreaView style={styles.wrapper}>
-        <View style={styles.header}>
+      <StatusBar
+        translucent={true}
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
+
+      <LinearGradient
+        colors={["#3E6993", "#3E6993"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <View style={styles.headerContent}>
           <Text style={styles.title}>Academics</Text>
           <View style={styles.noteWrapper}>
             <Ionicons
@@ -193,6 +234,9 @@ const Academics = () => {
             </Text>
           </View>
         </View>
+      </LinearGradient>
+
+      <SafeAreaView style={styles.wrapper} edges={["left", "right", "bottom"]}>
         <View style={styles.selectBox}>
           {["Courses", "Exams", "Results"].map((option) => (
             <Pressable
@@ -225,32 +269,37 @@ export default Academics;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#f4f4f4",
   },
   wrapper: {
     flex: 1,
     backgroundColor: "#f4f4f4",
   },
   header: {
-    paddingHorizontal: 10,
+    paddingTop: StatusBar.currentHeight || 44,
+    paddingBottom: 15,
+  },
+  headerContent: {
+    flexDirection: "column",
     paddingVertical: 10,
+    paddingHorizontal: 15,
     gap: 10,
-    backgroundColor: "rgb(6, 88, 160)",
   },
   title: {
     fontSize: 24,
     fontWeight: "500",
-    left: "4%",
     color: "#fff",
   },
   noteWrapper: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
+    left: -5,
   },
   noteText: {
     color: "rgb(255, 255, 255)",
     fontWeight: "300",
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: "calibri",
   },
   selectBox: {
@@ -315,7 +364,7 @@ const styles = StyleSheet.create({
     borderColor: "rgb(71, 131, 235)",
   },
   selectAllActive: {
-    backgroundColor: "rgba(5, 170, 35, 0.63)",
+    backgroundColor: "rgba(21, 113, 38, 0.63)",
   },
   selectAllButtonText: {
     color: "rgb(71, 131, 235)",
@@ -384,7 +433,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   registeredButton: {
-    backgroundColor: "rgba(5, 170, 35, 0.63)",
+    backgroundColor: "rgba(21, 113, 38, 0.63)",
   },
   emptyContent: {
     flex: 1,

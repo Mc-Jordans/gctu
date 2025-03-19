@@ -7,38 +7,45 @@ import {
   TextInput,
   Pressable,
   TouchableOpacity,
-  Alert,
   StatusBar,
-  Platform,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { useNavigation } from "expo-router"; 
-import React from "react";
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link } from "expo-router";
+import { useAuth } from "./context/AuthContext";
 
-const index = () => {
-  // const [rememberMe, setRememberMe] = React.useState(false);
-  const [identifier, setIdentifier] = React.useState("");
-  const [password, setPassword] = React.useState("");
+const LoginScreen = () => {
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const demoUser = {
-    indexNumber: "1704901978",
-    email: "1704901978@live.gctu.edu.gh",
-    password: "password",
+  const { signIn, loading } = useAuth();
+  const router = useRouter();
+
+  const handleLogin = async () => {
+    if (!identifier || !password) {
+      Alert.alert(
+        "Login Failed",
+        "Please enter both index number/email and password"
+      );
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const success = await signIn(identifier, password);
+      if (success) {
+        router.replace("/tabs/home");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const navigation = useNavigation();
-
-  const handleLogin = () => {
-    if (
-      (identifier === demoUser.indexNumber || identifier === demoUser.email) &&
-      password === demoUser.password
-    ) {
-      Alert.alert("Login Successful", "You have been logged in successfully.");
-      navigation.replace("tabs",{screen:'home'});
-    } else {
-      Alert.alert("Login Failed", "Invalid credentials. Please try again.");
-    }
+  const handleForgotPassword = () => {
+    router.push("/screens/ForgotPassword");
   };
 
   return (
@@ -49,7 +56,7 @@ const index = () => {
           <Image
             source={require("../assets/images/splash-icon.webp")}
             style={styles.headerImg}
-          ></Image>
+          />
           <Text style={styles.title}>
             Ghana Communication Technology University(GCTU)
           </Text>
@@ -66,25 +73,31 @@ const index = () => {
               style={styles.credentials}
               autoCapitalize="none"
               value={identifier}
-              onChangeText={(text) => setIdentifier(text)}
-            ></TextInput>
+              onChangeText={setIdentifier}
+            />
             <TextInput
               placeholder="Password"
               style={styles.credentials}
               secureTextEntry={true}
               autoCapitalize="none"
               value={password}
-              onChangeText={(text) => setPassword(text)}
-            ></TextInput>
-            <Pressable>
-              <Link href="../tabs/home">
-                <Text style={{ color: "rgb(252, 59, 59)" }}>
-                  Forgot Password?
-                </Text>
-              </Link>
+              onChangeText={setPassword}
+            />
+            <Pressable onPress={handleForgotPassword}>
+              <Text style={{ color: "rgb(252, 59, 59)" }}>
+                Forgot Password?
+              </Text>
             </Pressable>
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-              <Text style={styles.loginBtnText}>Log In</Text>
+            <TouchableOpacity
+              style={styles.loginBtn}
+              onPress={handleLogin}
+              disabled={isLoading || loading}
+            >
+              {isLoading || loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginBtnText}>Log In</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -93,8 +106,7 @@ const index = () => {
   );
 };
 
-export default index;
-
+export default LoginScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -179,17 +191,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(179, 179, 183, 0.86)",
     fontSize: 18,
   },
-
-  // checkboxContainer: {
-  //   flexDirection: "row",
-  //   alignItems: "center",
-  //   marginTop: 10,
-  // },
-
-  // label: {
-  //   marginLeft: 8,
-  //   fontSize: 16,
-  // },
 
   loginBtn: {
     backgroundColor: "rgb(3, 9, 79)",

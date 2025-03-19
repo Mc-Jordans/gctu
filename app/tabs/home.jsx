@@ -9,20 +9,21 @@ import {
   Pressable,
   Dimensions,
   Image,
+  RefreshControl,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import BellIcon from "../../assets/SVG/bell";
+import BellIcon from "../../assets/SVG/bell"; // Ensure path is correct
 import GpaIcon from "../../assets/SVG/GpaIcon";
 import CreditsIcon from "../../assets/SVG/CreditsIcon";
 import ConfirmationModal from "../components/ConfirmationModal";
-import {Credits} from "./academics";
+import { useRouter } from "expo-router";
+import { useAuth } from "../context/AuthContext";
+import { useNotifications } from "../context/NotificationsContext";
 
-// Dynamic width calculations
 const { width } = Dimensions.get("window");
 
-// Component for academic year calculation
 const AcademicYear = () => {
   const currentYear = new Date().getFullYear();
   return (
@@ -32,25 +33,49 @@ const AcademicYear = () => {
   );
 };
 
-// QuickAccess card component
-const QuickAccess = React.memo(({ title, icon, BgColor, color }) => (
-  <Pressable
-    style={({ pressed }) => [styles.courseCard, pressed && styles.pressedCard]}
-    android_ripple={{ color: "rgba(0,0,0,0.1)" }}
-  >
-    <View style={styles.courseCardContent}>
-      <View style={[styles.courseIconContainer, { backgroundColor: BgColor }]}>
-        <Ionicons name={icon} size={24} color={color} />
-      </View>
-      <Text style={styles.courseCardTitle}>{title}</Text>
-      <View style={styles.courseCardArrow}>
-        <Ionicons name="chevron-forward" size={20} color="rgba(0,0,0,0.5)" />
-      </View>
-    </View>
-  </Pressable>
-));
+const QuickAccess = React.memo(({ title, icon, BgColor, color }) => {
+  const router = useRouter();
 
-// Stat card component
+  const handleNavigation = useCallback(() => {
+    if (title === "Course Registration") {
+      router.push({
+        pathname: "/tabs/academics",
+        params: { section: "Courses" },
+      });
+    } else if (title === "Results") {
+      router.push({
+        pathname: "/tabs/academics",
+        params: { section: "Results" },
+      });
+    } else if (title === "Fee Payment") {
+      router.push("/tabs/finance"); // Fixed typo
+    }
+  }, [title, router]);
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.courseCard,
+        pressed && styles.pressedCard,
+      ]}
+      android_ripple={{ color: "rgba(0,0,0,0.1)" }}
+      onPress={handleNavigation}
+    >
+      <View style={styles.courseCardContent}>
+        <View
+          style={[styles.courseIconContainer, { backgroundColor: BgColor }]}
+        >
+          <Ionicons name={icon} size={24} color={color} />
+        </View>
+        <Text style={styles.courseCardTitle}>{title}</Text>
+        <View style={styles.courseCardArrow}>
+          <Ionicons name="chevron-forward" size={20} color="rgba(0,0,0,0.5)" />
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
 const StatCard = React.memo(({ icon, label, value, bgColor }) => (
   <View style={[styles.statCard, { backgroundColor: bgColor }]}>
     <View style={styles.statContent}>
@@ -63,59 +88,96 @@ const StatCard = React.memo(({ icon, label, value, bgColor }) => (
   </View>
 ));
 
-const HomeScreen = () => {
-  // Memoize contents data to prevent unnecessary re-renders
+export default function HomeScreen() {
+  const { signOut, user, studentProfile, fetchStudentProfile } = useAuth();
+  const { notifications, announcements, unreadCount, fetchNotifications } =
+    useNotifications();
+  const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (user) {
+        await Promise.all([fetchStudentProfile(user.id), fetchNotifications()]);
+      }
+    } catch (error) {
+      console.error("Error refreshing data:", error.message);
+      // Optionally show a toast or alert here
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, fetchStudentProfile, fetchNotifications]);
+
   const quickAccessContents = useMemo(
     () => [
       {
         title: "Course Registration",
         icon: "book-outline",
-        color: "rgba(133, 42, 244, 0.98)", // Light purple
-        BgColor: "rgba(217, 115, 245, 0.45)", // Dark purple
+        color: "rgba(133, 42, 244, 0.98)",
+        BgColor: "rgba(217, 115, 245, 0.45)",
       },
       {
         title: "Results",
         icon: "document-text-outline",
-        color: "rgba(246, 199, 28, 0.98)", // Light cream
-        BgColor: "rgba(243, 220, 139, 0.69)", // Dark cream
+        color: "rgba(246, 199, 28, 0.98)",
+        BgColor: "rgba(243, 220, 139, 0.69)",
       },
       {
         title: "Fee Payment",
         icon: "card-outline",
-        color: "rgba(242, 47, 57, 0.94)", // Light red
-        BgColor: "rgba(239, 110, 116, 0.55)", // Dark red
+        color: "rgba(242, 47, 57, 0.94)",
+        BgColor: "rgba(239, 110, 116, 0.55)",
       },
-      
     ],
     []
   );
 
-  const [modalVisible, setModalVisible] = useState(false);
+  const handleLogout = () => setModalVisible(true);
 
-  const handleLogout = () => { 
-    setModalVisible(true);
-  } 
-
-  const confirmLogout = () => {
-    setModalVisible(false);
-    console.log("User logged out"); 
+  const confirmLogout = async () => {
+    try {
+      await signOut();
+      setModalVisible(false);
+      router.replace("/login");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
-  const cancelLogout = () =>{
-    setModalVisible(false);
-    console.log("Logout cancelled");
+  const cancelLogout = () => setModalVisible(false);
+
+  const displayName = useMemo(() => {
+    if (studentProfile?.first_name) return studentProfile.first_name;
+    if (user?.user_metadata?.full_name) return user.user_metadata.full_name;
+    if (user?.email) return `Student ${user.email.split("@")[0]}`;
+    return "Student";
+  }, [user, studentProfile]);
+
+  const userTitle = useMemo(() => {
+    if (studentProfile?.gender === "Male") return "Mr.";
+    if (studentProfile?.gender === "Female") return "Ms.";
+    return "";
+  }, [studentProfile]);
+
+  const fullDisplayName = useMemo(() => {
+    return userTitle ? `${userTitle} ${displayName}` : displayName;
+  }, [userTitle, displayName]);
+
+  if (!user) {
+    router.replace("/login");
+    return null;
   }
 
+  console.log("Notifications:", notifications);
+  console.log("Announcements:", announcements);
+  console.log("Unread Count:", unreadCount);
+
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: "#1075E9",
-      }}
-    >
+    <View style={{ flex: 1, backgroundColor: "#1075E9" }}>
       <StatusBar backgroundColor="#1075E9" barStyle="light-content" />
       <SafeAreaView style={styles.wrapper}>
-        <StatusBar barStyle="light-content" />
         <LinearGradient
           colors={["#1075E9", "rgba(25, 46, 235, 0.9)"]}
           style={styles.headerGradient}
@@ -130,12 +192,24 @@ const HomeScreen = () => {
               </View>
               <View style={styles.greetings}>
                 <Text style={styles.mainGreetings}>Welcome</Text>
-                <Text style={styles.userName}>Mr John</Text>
+                <Text style={styles.userName}>{fullDisplayName}</Text>
               </View>
             </View>
             <View style={styles.rightHeader}>
-              <Pressable style={styles.iconButton}>
-                <BellIcon />
+              <Pressable
+                style={styles.iconButton}
+                onPress={() => router.push("/screens/notifications")}
+              >
+                <View>
+                  <BellIcon />
+                  {unreadCount > 0 && (
+                    <View style={styles.notificationBadge}>
+                      <Text style={styles.notificationCount}>
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </Pressable>
               <Pressable style={styles.logoutButton} onPress={handleLogout}>
                 <Ionicons
@@ -152,55 +226,61 @@ const HomeScreen = () => {
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#3372EF"]}
+            />
+          }
         >
-          {/* Program Card */}
           <View style={styles.programCard}>
             <View style={styles.programHeader}>
               <View>
                 <Text style={styles.programLabel}>PROGRAM</Text>
                 <Text style={styles.programTitle}>
-                  BSc. Information Technology
+                  {studentProfile?.program || "BSc. Information Technology"}
                 </Text>
               </View>
               <View style={styles.levelBadge}>
-                <Text style={styles.levelText}>Level 200</Text>
+                <Text style={styles.levelText}>
+                  Level {studentProfile?.level || "200"}
+                </Text>
               </View>
             </View>
-
             <View style={styles.semesterInfo}>
               <View style={styles.semesterDetail}>
                 <Text style={styles.semesterLabel}>Current Semester</Text>
                 <Text style={styles.semesterText}>
-                  <AcademicYear /> - Semester 1
+                  <AcademicYear /> - Semester{" "}
+                  {studentProfile?.current_semester || "1"}
                 </Text>
               </View>
               <View style={styles.statusBadge}>
-                <Text style={styles.statusText}>Active</Text>
+                <Text style={styles.statusText}>
+                  {studentProfile?.status || "Active"}
+                </Text>
               </View>
             </View>
           </View>
 
-          {/* Stats Cards - Bright Colors */}
           <View style={styles.statsRow}>
             <StatCard
               icon={<GpaIcon />}
               label="CGPA"
-              value="3.75"
-              bgColor="#e0e7ff" // Light purple
+              value={studentProfile?.cgpa || "3.75"}
+              bgColor="#e0e7ff"
             />
             <StatCard
               icon={<CreditsIcon />}
               label="Credits"
-              value={<Credits/>}
-              bgColor="#d1fae5" // Light green
+              value={studentProfile?.credits || "15"} // Replace Credits component if needed
+              bgColor="#d1fae5"
             />
           </View>
 
-          {/* Quick Access Section */}
           <View style={styles.quickAccessSection}>
             <Text style={styles.sectionTitle}>Quick access</Text>
-
-            {/* Quick Access Cards */}
             <View style={styles.coursesContainer}>
               {quickAccessContents.map((quickAccessContent, index) => (
                 <QuickAccess key={index} {...quickAccessContent} />
@@ -209,18 +289,19 @@ const HomeScreen = () => {
           </View>
         </ScrollView>
 
-        {/* Confirmation Modal */}
         <ConfirmationModal
           visible={modalVisible}
           onConfirm={confirmLogout}
           onCancel={cancelLogout}
+          title="Logout"
+          message="Are you sure you want to logout?"
+          confirmText="Logout"
+          cancelText="Cancel"
         />
       </SafeAreaView>
     </View>
   );
-};
-
-export default HomeScreen;
+}
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -244,7 +325,7 @@ const styles = StyleSheet.create({
   profileImageContainer: {
     width: 50,
     height: 50,
-    borderRadius: 25, // Changed to half of width/height for perfect circle
+    borderRadius: 25,
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.8)",
     alignItems: "center",
@@ -340,7 +421,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   levelBadge: {
-    backgroundColor: "#e0e7ff", // Light purple to match CGPA
+    backgroundColor: "#e0e7ff",
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 16,
@@ -348,7 +429,7 @@ const styles = StyleSheet.create({
   levelText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#4338ca", // Dark purple
+    color: "#4338ca",
   },
   semesterInfo: {
     flexDirection: "row",
@@ -432,7 +513,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 15,
-    fontWeight: "700", // Changed from 500 to 700 for better visibility
+    fontWeight: "700",
     color: "#6b7280",
     marginBottom: 2,
   },
@@ -482,5 +563,21 @@ const styles = StyleSheet.create({
   },
   pressedCard: {
     opacity: 0.8,
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    backgroundColor: "red",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  notificationCount: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "bold",
   },
 });
