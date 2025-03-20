@@ -11,8 +11,9 @@ import {
   RefreshControl,
   FlatList,
   Image,
-  useWindowDimensions, // Add this import
+  useWindowDimensions,
   Platform,
+  Alert,
 } from "react-native";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,8 +23,8 @@ import BellIcon from "../../assets/SVG/bell";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { DollarSign } from "lucide-react-native";
 
-// Exchange rate constant (1 USD = 13.5 GHS)
-const USD_TO_GHS_RATE = 13.5;
+// Remove the hardcoded exchange rate constant
+// const USD_TO_GHS_RATE = 13.5;
 
 // Payment Item Component
 const PaymentItem = ({
@@ -80,6 +81,7 @@ const AccountCard = ({
   isCedi,
   toggleCurrency,
   conversionRate,
+  isLoadingRate,
 }) => {
   const { width } = useWindowDimensions();
   const displayAmount = isCedi
@@ -106,22 +108,33 @@ const AccountCard = ({
           <Text style={styles.cardDescription}>Balance Due</Text>
           <View style={styles.amountContainer}>
             <Text style={styles.currencySymbol}>{isCedi ? "₵" : "$"}</Text>
-            <Text style={styles.amount}>{displayAmount}</Text>
+            {isLoadingRate && isCedi ? (
+              <ActivityIndicator
+                size="small"
+                color="#fff"
+                style={{ marginLeft: 10 }}
+              />
+            ) : (
+              <Text style={styles.amount}>{displayAmount}</Text>
+            )}
           </View>
 
           <View style={styles.currencySymbolRight}>
             <TouchableOpacity
               style={styles.currencySymbolRightIcon}
               onPress={toggleCurrency}
+              disabled={isLoadingRate}
             >
-              {isCedi ? (
+              {isLoadingRate ? (
+                <ActivityIndicator size="small" color="#4D8AC8" />
+              ) : isCedi ? (
                 <Text
-                  style={{ fontSize: 20, color: "#fff", fontWeight: "bold" }}
+                  style={{ fontSize: 20, color: "#4D8AC8", fontWeight: "bold" }}
                 >
                   ₵
                 </Text>
               ) : (
-                <DollarSign size={20} color="#fff" />
+                <DollarSign size={20} color="#4D8AC8" />
               )}
             </TouchableOpacity>
           </View>
@@ -327,9 +340,54 @@ const Finance = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [paymentInProgress, setPaymentInProgress] = useState(false);
   const [isCedi, setIsCedi] = useState(false); // Currency toggle state
+  const [exchangeRate, setExchangeRate] = useState(1); // Default exchange rate
+  const [isLoadingRate, setIsLoadingRate] = useState(false); // Loading state for exchange rate
 
   const academicYears = ["2023-2024", "2024-2025", "2025-2026"];
   const paymentTypes = ["All", "Tuition", "Housing", "Books", "Fees"];
+
+  // Function to fetch exchange rate
+  const fetchExchangeRate = async (
+    fromCurrency = "USD",
+    toCurrency = "GHS"
+  ) => {
+    setIsLoadingRate(true);
+    const API_KEY = "ebd61213c021ff0ac0adf562";
+    const API_URL = `https://v6.exchangerate-api.com/v6/${API_KEY}/pair/${fromCurrency}/${toCurrency}`;
+
+    try {
+      const response = await fetch(API_URL);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch exchange rate");
+      }
+
+      const data = await response.json();
+      if (data.result === "success") {
+        setExchangeRate(data.conversion_rate);
+      } else {
+        throw new Error("Invalid response from exchange rate API");
+      }
+    } catch (error) {
+      console.error("Exchange rate error:", error);
+      Alert.alert(
+        "Exchange Rate Error",
+        "Could not fetch the latest exchange rate. Using default rate.",
+        [{ text: "OK" }]
+      );
+      // Fallback to a default rate if API fails
+      setExchangeRate(13.5);
+    } finally {
+      setIsLoadingRate(false);
+    }
+  };
+
+  // Fetch exchange rate when currency is toggled to GHS
+  useEffect(() => {
+    if (isCedi) {
+      fetchExchangeRate();
+    }
+  }, [isCedi]);
 
   const fullPaymentHistory = [
     {
@@ -453,10 +511,16 @@ const Finance = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+
+    // Refresh exchange rate if in cedi mode
+    if (isCedi) {
+      fetchExchangeRate();
+    }
+
     setTimeout(() => {
       setRefreshing(false);
     }, 1500);
-  }, []);
+  }, [isCedi]);
 
   const handleLogout = () => {
     setLogoutModalVisible(true);
@@ -506,7 +570,7 @@ const Finance = () => {
       payment={item}
       isHistory={activeTab === "history"}
       currencySymbol={isCedi ? "₵" : "$"}
-      conversionRate={isCedi ? USD_TO_GHS_RATE : 1}
+      conversionRate={isCedi ? exchangeRate : 1}
     />
   );
 
@@ -590,7 +654,8 @@ const Finance = () => {
           onPayNow={handlePayNow}
           isCedi={isCedi}
           toggleCurrency={toggleCurrency}
-          conversionRate={USD_TO_GHS_RATE}
+          conversionRate={exchangeRate}
+          isLoadingRate={isLoadingRate}
         />
 
         <View style={styles.quickActions}>
@@ -719,243 +784,168 @@ const Finance = () => {
   );
 };
 
-export default Finance;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F9FC",
+    backgroundColor: "#F5F9FF",
   },
   header: {
-    justifyContent: "flex-end", // Align content to bottom of header
+    backgroundColor: "#3372EF",
+    paddingTop: 0,
   },
   safeHeader: {
-    width: "100%",
+    flex: 1,
   },
   headerContent: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
     paddingHorizontal: 20,
+    marginTop: 10,
   },
   headerTitle: {
-    fontWeight: "600",
     color: "#fff",
+    fontWeight: "bold",
   },
   headerIcons: {
     flexDirection: "row",
-    gap: 15,
   },
   iconButton: {
-    padding: 5,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
-  },
-  logoutButton: {
-    padding: 5,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
+    marginLeft: 15,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 20,
-    paddingBottom: 30,
+    paddingBottom: 20,
   },
-  loadingContainer: {
-    alignItems: "center",
+  paymentProcessingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
-    paddingVertical: 40,
+    alignItems: "center",
+    zIndex: 10,
   },
-  loadingText: {
+  paymentProcessingContent: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  paymentProcessingText: {
     marginTop: 10,
     fontSize: 16,
-    color: "#666",
+    fontWeight: "600",
   },
   accountCard: {
-    width: "100%",
-    padding: 20,
-    borderRadius: 24,
+    borderRadius: 15,
     marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 10, // Android shadow
+    overflow: "hidden", // Ensures the gradient doesn't bleed out of the rounded corners
+    position: "relative", // Required for absolute positioning of children
   },
-
-  // Decorative elements
   cardDecoration: {
     position: "absolute",
     top: 0,
     left: 0,
-    right: 0,
-    bottom: 0,
+    width: "100%",
+    height: "100%",
   },
   circle1: {
     position: "absolute",
+    top: -50,
+    left: -50,
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    top: -70,
-    right: -50,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
   circle2: {
     position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    bottom: -100,
-    left: -80,
+    bottom: -30,
+    right: -30,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
-
-  // Card content
   cardContent: {
+    padding: 20,
     flex: 1,
     justifyContent: "space-between",
-    zIndex: 1,
   },
   balanceContainer: {
-    marginBottom: 15,
+    marginBottom: 20,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 16,
     color: "#fff",
-    marginBottom: 6,
+    opacity: 0.7,
+    marginBottom: 5,
   },
-
-  currencySymbolRight: {
-    position: "absolute",
-    right: 10,
-    backgroundColor: "rgba(255, 255, 255,0.3)",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  currencySymbolRightIcon: {
-    position: "absolute",
-    right: -5,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(104, 101, 101, 0.43)",
-  },
-
   cardDescription: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.85)",
-    marginBottom: 20,
-    marginTop: 20,
+    fontSize: 18,
+    color: "#fff",
+    fontWeight: "bold",
+    marginBottom: 5,
   },
   amountContainer: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: 16,
+    alignItems: "center",
   },
   currencySymbol: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 24,
     color: "#fff",
-    marginRight: 4,
-    marginBottom: 3,
+    marginRight: 5,
   },
   amount: {
-    fontSize: 32,
-    fontWeight: "800",
+    fontSize: 36,
     color: "#fff",
+    fontWeight: "bold",
   },
-  detailsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    alignSelf: "flex-start",
+  currencySymbolRight: {
+    position: "absolute",
+    top: 10,
+    right: 10,
   },
-  detailLabel: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.85)",
-    fontWeight: "500",
-    marginLeft: 6,
-    marginRight: 4,
+  currencySymbolRightIcon: {
+    padding: 5,
+    borderRadius: 5,
   },
-  detailText: {
-    fontSize: 13,
-    color: "#fff",
-    fontWeight: "600",
-  },
-
-  // Bottom section
   bottomRow: {
-    alignItems: "flex-end",
-    justifyContent: "flex-end",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   payButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    backgroundColor: "#3372EF",
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.4)",
-    right: 0,
-    position: "absolute",
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
   },
   payButtonText: {
     color: "#fff",
+    fontWeight: "bold",
     fontSize: 16,
-    fontWeight: "700",
-    marginRight: 8,
   },
   buttonIcon: {
-    marginLeft: 2,
+    marginLeft: 5,
   },
-
-  // Logo section
   logoContainer: {
     position: "absolute",
-    bottom: -16,
-    left: -10,
-    flexDirection: "row",
+    bottom: 10,
+    left: 10,
     alignItems: "center",
-    padding: 10,
   },
   logoImage: {
-    width: 24,
-    height: 24,
-    marginRight: 6,
+    width: 40,
+    height: 40,
   },
   logoText: {
-    fontSize: 16,
-    fontWeight: "bold",
     color: "#fff",
+    fontSize: 12,
+    marginTop: 2,
   },
   quickActions: {
     flexDirection: "row",
@@ -965,20 +955,19 @@ const styles = StyleSheet.create({
   actionButton: {
     backgroundColor: "#fff",
     padding: 15,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: "center",
-    justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   actionText: {
-    color: "#333",
-    fontSize: 12,
-    marginTop: 8,
-    textAlign: "center",
+    marginTop: 5,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#3372EF",
   },
   filterContainer: {
     flexDirection: "row",
@@ -987,126 +976,148 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   filterInfo: {
-    flex: 1,
+    backgroundColor: "#E4EDFB",
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 8,
   },
   filterInfoText: {
+    color: "#3372EF",
     fontSize: 14,
-    color: "#555",
-    fontWeight: "500",
   },
   filterButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E9EFFD",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    gap: 5,
+    backgroundColor: "#fff",
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   filterButtonText: {
-    fontSize: 13,
     color: "#3372EF",
-    fontWeight: "600",
+    fontSize: 14,
+    marginLeft: 5,
   },
   tabContainer: {
     flexDirection: "row",
-    marginBottom: 15,
-    borderRadius: 8,
-    backgroundColor: "#E9EFFD",
-    padding: 5,
+    backgroundColor: "#F0F4F9",
+    borderRadius: 10,
+    marginBottom: 20,
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: "center",
-    borderRadius: 6,
   },
   activeTab: {
     backgroundColor: "#fff",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabText: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#7A8FA6",
   },
   activeTabText: {
     color: "#3372EF",
-    fontWeight: "600",
   },
   paymentsContainer: {
-    marginBottom: 20,
+    flex: 1,
   },
   paymentItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    borderRadius: 12,
+    padding: 15,
+    borderRadius: 10,
     marginBottom: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   paymentInfo: {
     flex: 1,
   },
   paymentType: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 4,
   },
   paymentDate: {
-    fontSize: 13,
-    color: "#777",
+    fontSize: 14,
+    color: "#7A8FA6",
   },
   paymentAmount: {
     alignItems: "flex-end",
   },
   paymentAmountText: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "bold",
     color: "#333",
-    marginBottom: 4,
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+    marginTop: 5,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "600",
+  },
+  emptyState: {
+    alignItems: "center",
+    marginTop: 50,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: "#C5CEE0",
+    marginTop: 10,
+    textAlign: "center",
+  },
+  loadingContainer: {
+    alignItems: "center",
+    marginTop: 50,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#7A8FA6",
+    marginTop: 10,
   },
   modalOverlay: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 15,
     padding: 20,
-    paddingBottom: 30,
+    maxWidth: "90%",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 15,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 20,
+    fontWeight: "bold",
     color: "#333",
   },
   filterSection: {
@@ -1116,105 +1127,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   filterOptions: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
   },
   filterOption: {
-    paddingHorizontal: 16,
+    backgroundColor: "#F0F4F9",
     paddingVertical: 8,
+    paddingHorizontal: 15,
     borderRadius: 8,
-    backgroundColor: "#F0F4F8",
-    marginBottom: 8,
+    marginRight: 10,
+    marginBottom: 10,
   },
   selectedFilterOption: {
-    backgroundColor: "#E1EBFF",
-    borderColor: "#3372EF",
-    borderWidth: 1,
+    backgroundColor: "#3372EF",
   },
   filterOptionText: {
     fontSize: 14,
-    color: "#555",
+    color: "#7A8FA6",
   },
   selectedFilterOptionText: {
-    color: "#3372EF",
-    fontWeight: "600",
+    color: "#fff",
   },
   modalButtonContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
     marginTop: 20,
-    gap: 10,
   },
   clearButton: {
-    flex: 1,
-    backgroundColor: "#F0F4F8",
-    paddingVertical: 14,
+    backgroundColor: "#fff",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 10,
-    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#3372EF",
   },
   clearButtonText: {
-    color: "#555",
+    color: "#3372EF",
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   applyButton: {
-    flex: 2,
     backgroundColor: "#3372EF",
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 10,
-    alignItems: "center",
   },
   applyButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: "#8F9BB3",
-    marginTop: 12,
-    textAlign: "center",
-    paddingHorizontal: 20,
-  },
-  paymentProcessingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  paymentProcessingContent: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 16,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    width: "80%",
-  },
-  paymentProcessingText: {
-    marginTop: 15,
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "500",
-  },
 });
+
+export default Finance;
