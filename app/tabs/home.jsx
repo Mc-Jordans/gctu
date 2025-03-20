@@ -140,7 +140,7 @@ export default function HomeScreen() {
     try {
       await signOut();
       setModalVisible(false);
-      router.replace("/login");
+      router.replace("/");
     } catch (error) {
       console.error("Logout error:", error);
     }

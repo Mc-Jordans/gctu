@@ -15,8 +15,8 @@ import { useRouter } from "expo-router";
 import { format, formatDistanceToNow } from "date-fns";
 import { useNotifications } from "../context/NotificationsContext";
 
-const NotificationItem = ({ item, onPress }) => {
-  const [isExpanded, setIsExpanded] = useState(false); // State to track expansion
+const NotificationItem = ({ item, onPress, onLongPress, isSelected }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const isToday = (date) => {
     const today = new Date();
@@ -29,31 +29,32 @@ const NotificationItem = ({ item, onPress }) => {
   };
 
   const formatDate = (date) => {
-    if (isToday(date)) {
+    if (isToday(date))
       return formatDistanceToNow(new Date(date), { addSuffix: true });
-    }
     return format(new Date(date), "MMM d, yyyy");
   };
 
-  // Handle tap to toggle expansion
   const handlePress = () => {
     setIsExpanded(!isExpanded);
-    onPress(item); // Still call the original onPress for marking as read or navigation
+    onPress(item);
   };
 
-  // Truncate message if longer than a threshold (e.g., 50 chars) and not expanded
   const truncateMessage = (message) => {
-    const maxLength = 50; // Adjust as needed
-    if (message.length > maxLength && !isExpanded) {
+    const maxLength = 50;
+    if (message.length > maxLength && !isExpanded)
       return message.substring(0, maxLength) + "...";
-    }
     return message;
   };
 
   return (
     <TouchableOpacity
-      style={[styles.notificationItem, !item.read && styles.unreadItem]}
+      style={[
+        styles.notificationItem,
+        !item.read && styles.unreadItem,
+        isSelected && styles.selectedItem,
+      ]}
       onPress={handlePress}
+      onLongPress={() => onLongPress(item)}
     >
       <View style={styles.notificationIconContainer}>
         <View
@@ -73,7 +74,7 @@ const NotificationItem = ({ item, onPress }) => {
         <Text style={styles.notificationTitle}>{item.title}</Text>
         <Text
           style={styles.notificationBody}
-          numberOfLines={isExpanded ? 0 : 2} // Unlimited lines when expanded
+          numberOfLines={isExpanded ? 0 : 2}
         >
           {truncateMessage(item.message)}
         </Text>
@@ -88,6 +89,7 @@ const NotificationItem = ({ item, onPress }) => {
 
 const Notifications = () => {
   const [activeTab, setActiveTab] = useState("notifications");
+  const [selectedItems, setSelectedItems] = useState([]);
   const router = useRouter();
   const {
     notifications,
@@ -97,23 +99,61 @@ const Notifications = () => {
     fetchNotifications,
     markAsRead,
     markAllAsRead,
+    deleteNotifications,
   } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
+    setSelectedItems([]);
     await fetchNotifications();
     setRefreshing(false);
   };
 
-  const handleNotificationPress = (notification) => {
-    if (!notification.read) {
-      markAsRead(notification.id);
-    }
-    if (notification.action_url) {
-      router.push(notification.action_url);
+  const handleNotificationPress = (item) => {
+    if (selectedItems.length > 0) {
+      toggleSelection(item);
+    } else {
+      markAsRead(item.id, activeTab === "announcements");
+      if (item.action_url) router.push(item.action_url);
     }
   };
+
+  const handleLongPress = (item) => {
+    toggleSelection(item);
+  };
+
+  const toggleSelection = (item) => {
+    setSelectedItems((prev) =>
+      prev.includes(item.id)
+        ? prev.filter((id) => id !== item.id)
+        : [...prev, item.id]
+    );
+  };
+
+  const handleDelete = async () => {
+    if (selectedItems.length === 0) return;
+    await deleteNotifications(selectedItems, activeTab === "announcements");
+    setSelectedItems([]);
+  };
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <Feather name="arrow-left" size={24} color="#0f172a" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Notifications</Text>
+      {selectedItems.length > 0 ? (
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+          <Text style={styles.deleteText}>Delete ({selectedItems.length})</Text>
+        </TouchableOpacity>
+      ) : unreadCount > 0 ? (
+        <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
+          <Text style={styles.markAllText}>Mark all as read</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
@@ -131,23 +171,7 @@ const Notifications = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" translucent={true} />
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Feather name="arrow-left" size={24} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        {unreadCount > 0 && (
-          <TouchableOpacity
-            style={styles.markAllButton}
-            onPress={markAllAsRead}
-          >
-            <Text style={styles.markAllText}>Mark all as read</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {renderHeader()}
 
       <View style={styles.tabContainer}>
         <TouchableOpacity
@@ -155,7 +179,10 @@ const Notifications = () => {
             styles.tabButton,
             activeTab === "notifications" && styles.activeTabButton,
           ]}
-          onPress={() => setActiveTab("notifications")}
+          onPress={() => {
+            setActiveTab("notifications");
+            setSelectedItems([]);
+          }}
         >
           <Text
             style={[
@@ -171,7 +198,10 @@ const Notifications = () => {
             styles.tabButton,
             activeTab === "announcements" && styles.activeTabButton,
           ]}
-          onPress={() => setActiveTab("announcements")}
+          onPress={() => {
+            setActiveTab("announcements");
+            setSelectedItems([]);
+          }}
         >
           <Text
             style={[
@@ -192,7 +222,12 @@ const Notifications = () => {
         <FlatList
           data={activeTab === "notifications" ? notifications : announcements}
           renderItem={({ item }) => (
-            <NotificationItem item={item} onPress={handleNotificationPress} />
+            <NotificationItem
+              item={item}
+              onPress={handleNotificationPress}
+              onLongPress={handleLongPress}
+              isSelected={selectedItems.includes(item.id)}
+            />
           )}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContainer}
@@ -211,7 +246,6 @@ const Notifications = () => {
   );
 };
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -353,6 +387,18 @@ const styles = StyleSheet.create({
     color: "#64748b",
     textAlign: "center",
     marginTop: 8,
+  },
+  selectedItem: {
+    backgroundColor: "#e5e7eb",
+  },
+  deleteButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  deleteText: {
+    fontSize: 14,
+    color: "#dc2626",
+    fontWeight: "600",
   },
 });
 

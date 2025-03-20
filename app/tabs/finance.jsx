@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   FlatList,
-  Image, // Added for GCTU logo
+  Image,
+  useWindowDimensions, // Add this import
+  Platform,
 } from "react-native";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LinearGradient } from "expo-linear-gradient";
@@ -20,8 +22,16 @@ import BellIcon from "../../assets/SVG/bell";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { DollarSign } from "lucide-react-native";
 
+// Exchange rate constant (1 USD = 13.5 GHS)
+const USD_TO_GHS_RATE = 13.5;
+
 // Payment Item Component
-const PaymentItem = ({ payment, isHistory = false }) => {
+const PaymentItem = ({
+  payment,
+  isHistory = false,
+  currencySymbol,
+  conversionRate = 1,
+}) => {
   return (
     <View style={styles.paymentItem}>
       <View style={styles.paymentInfo}>
@@ -32,7 +42,8 @@ const PaymentItem = ({ payment, isHistory = false }) => {
       </View>
       <View style={styles.paymentAmount}>
         <Text style={styles.paymentAmountText}>
-          ${payment.amount.toFixed(2)}
+          {currencySymbol}
+          {(payment.amount * conversionRate).toFixed(2)}
         </Text>
         {isHistory && (
           <View
@@ -62,13 +73,25 @@ const PaymentItem = ({ payment, isHistory = false }) => {
 };
 
 // Account Card Component (Updated)
-const AccountCard = ({ totalBalance, dueDate, onPayNow }) => {
+const AccountCard = ({
+  totalBalance,
+  dueDate,
+  onPayNow,
+  isCedi,
+  toggleCurrency,
+  conversionRate,
+}) => {
+  const { width } = useWindowDimensions();
+  const displayAmount = isCedi
+    ? (parseFloat(totalBalance) * conversionRate).toFixed(2)
+    : totalBalance;
+
   return (
     <LinearGradient
       colors={["#2D5D8A", "#4D8AC8", "#69B1F9"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={styles.accountCard}
+      style={[styles.accountCard, { height: width * 0.55 }]} // Responsive height
     >
       {/* Card decoration elements */}
       <View style={styles.cardDecoration}>
@@ -82,16 +105,25 @@ const AccountCard = ({ totalBalance, dueDate, onPayNow }) => {
           <Text style={styles.cardTitle}>Account Statement</Text>
           <Text style={styles.cardDescription}>Balance Due</Text>
           <View style={styles.amountContainer}>
-            <Text style={styles.currencySymbol}>$</Text>
-            <Text style={styles.amount}>{totalBalance}</Text>
+            <Text style={styles.currencySymbol}>{isCedi ? "₵" : "$"}</Text>
+            <Text style={styles.amount}>{displayAmount}</Text>
           </View>
 
           <View style={styles.currencySymbolRight}>
-            <View style={styles.currencySymbolRight}>
-              <TouchableOpacity style={styles.currencySymbolRightIcon}>
-                {<DollarSign size={20} color="#4D8AC8" />}
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.currencySymbolRightIcon}
+              onPress={toggleCurrency}
+            >
+              {isCedi ? (
+                <Text
+                  style={{ fontSize: 20, color: "#fff", fontWeight: "bold" }}
+                >
+                  ₵
+                </Text>
+              ) : (
+                <DollarSign size={20} color="#fff" />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -149,9 +181,12 @@ const EmptyState = ({ type }) => {
 
 // Quick Action Button Component
 const ActionButton = ({ icon, label, onPress }) => {
+  const { width } = useWindowDimensions();
+  const buttonWidth = (width - 60) / 3; // 60 = padding and gaps
+
   return (
     <TouchableOpacity
-      style={styles.actionButton}
+      style={[styles.actionButton, { width: buttonWidth }]}
       onPress={onPress}
       accessibilityLabel={label}
       accessibilityHint={`Tap to view ${label.toLowerCase()}`}
@@ -175,6 +210,8 @@ const FilterModal = ({
   onApply,
   onClear,
 }) => {
+  const { width } = useWindowDimensions();
+
   return (
     <Modal
       animationType="slide"
@@ -183,7 +220,7 @@ const FilterModal = ({
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+        <View style={[styles.modalContent, { width: width }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Filter Payments</Text>
             <Pressable
@@ -280,6 +317,7 @@ const FilterModal = ({
 
 // Main Finance Component
 const Finance = () => {
+  const { width, height } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState("current");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedPaymentType, setSelectedPaymentType] = useState("All");
@@ -288,6 +326,7 @@ const Finance = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [paymentInProgress, setPaymentInProgress] = useState(false);
+  const [isCedi, setIsCedi] = useState(false); // Currency toggle state
 
   const academicYears = ["2023-2024", "2024-2025", "2025-2026"];
   const paymentTypes = ["All", "Tuition", "Housing", "Books", "Fees"];
@@ -378,6 +417,11 @@ const Finance = () => {
   const [upcomingPayments, setUpcomingPayments] =
     useState(fullUpcomingPayments);
 
+  // Toggle currency function
+  const toggleCurrency = () => {
+    setIsCedi(!isCedi);
+  };
+
   const filteredHistory = useMemo(() => {
     return fullPaymentHistory.filter((payment) => {
       const matchesType =
@@ -458,8 +502,19 @@ const Finance = () => {
   };
 
   const renderPaymentItem = ({ item }) => (
-    <PaymentItem payment={item} isHistory={activeTab === "history"} />
+    <PaymentItem
+      payment={item}
+      isHistory={activeTab === "history"}
+      currencySymbol={isCedi ? "₵" : "$"}
+      conversionRate={isCedi ? USD_TO_GHS_RATE : 1}
+    />
   );
+
+  // Calculate header height based on device
+  const headerHeight =
+    Platform.OS === "ios"
+      ? height * 0.13
+      : StatusBar.currentHeight + height * 0.08;
 
   return (
     <View style={styles.container}>
@@ -473,11 +528,13 @@ const Finance = () => {
         colors={["#2D5D8A", "#69B1F9", "#4D8AC8"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 0 }}
-        style={styles.header}
+        style={[styles.header, { height: headerHeight }]}
       >
         <SafeAreaView style={styles.safeHeader}>
           <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Finance</Text>
+            <Text style={[styles.headerTitle, { fontSize: width * 0.06 }]}>
+              Finance
+            </Text>
             <View style={styles.headerIcons}>
               <Pressable
                 style={styles.iconButton}
@@ -503,7 +560,10 @@ const Finance = () => {
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingHorizontal: width * 0.05 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -528,6 +588,9 @@ const Finance = () => {
           totalBalance={totalBalanceDue}
           dueDate="Feb 28, 2025"
           onPayNow={handlePayNow}
+          isCedi={isCedi}
+          toggleCurrency={toggleCurrency}
+          conversionRate={USD_TO_GHS_RATE}
         />
 
         <View style={styles.quickActions}>
@@ -664,9 +727,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F9FC",
   },
   header: {
-    justifyContent: "center", // Align content to bottom of header
-    height: StatusBar.currentHeight || "15%",
-    
+    justifyContent: "flex-end", // Align content to bottom of header
   },
   safeHeader: {
     width: "100%",
@@ -675,12 +736,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 0,
+    paddingVertical: 10,
     paddingHorizontal: 20,
-    top:20,
   },
   headerTitle: {
-    fontSize: 26,
     fontWeight: "600",
     color: "#fff",
   },
@@ -712,7 +771,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
   },
@@ -728,7 +786,6 @@ const styles = StyleSheet.create({
   },
   accountCard: {
     width: "100%",
-    height: 220,
     padding: 20,
     borderRadius: 24,
     marginBottom: 20,
@@ -737,7 +794,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 10, // Android shadow
-    // overflow: "hidden", // ❌ REMOVE THIS
   },
 
   // Decorative elements
@@ -806,6 +862,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(104, 101, 101, 0.43)",
   },
 
   cardDescription: {
@@ -911,7 +968,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    width: "30%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,

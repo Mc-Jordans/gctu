@@ -81,6 +81,11 @@ const Profile = () => {
     }
   };
 
+  const responsiveFontSize = (baseSize) => {
+    const scaleFactor = Math.min(width / 380, 1.2); // Cap the scaling
+    return Math.round(baseSize * scaleFactor);
+  };
+
   const handleLogout = () => {
     setModalVisible(true);
   };
@@ -255,7 +260,7 @@ const Profile = () => {
                 style={styles.iconButton}
                 onPress={() => router.push("/screens/notifications")}
               >
-               <BellIcon/>
+                <BellIcon />
                 {unreadCount > 0 && (
                   <View style={styles.notificationBadge}>
                     <Text style={styles.notificationCount}>
