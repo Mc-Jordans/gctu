@@ -21,6 +21,7 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { useRouter } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationsContext";
+import { Credits } from "./academics";
 
 const { width } = Dimensions.get("window");
 
@@ -40,7 +41,6 @@ const getProgramWithAbbreviation = (program, type) => {
     Masters: "MSc",
     PhD: "PhD",
   };
-
   const abbreviation = degreeAbbreviations[type] || "";
   return abbreviation ? `${abbreviation}. ${program}` : program;
 };
@@ -60,7 +60,7 @@ const QuickAccess = React.memo(({ title, icon, BgColor, color }) => {
         params: { section: "Results" },
       });
     } else if (title === "Fee Payment") {
-      router.push("/tabs/finance"); // Fixed typo
+      router.push("/tabs/finance");
     }
   }, [title, router]);
 
@@ -101,7 +101,8 @@ const StatCard = React.memo(({ icon, label, value, bgColor }) => (
 ));
 
 export default function HomeScreen() {
-  const { signOut, user, studentProfile, fetchStudentProfile } = useAuth();
+  const { signOut, user, studentProfile, fetchStudentProfile, mountedCourses } =
+    useAuth();
   const { notifications, announcements, unreadCount, fetchNotifications } =
     useNotifications();
   const router = useRouter();
@@ -116,7 +117,6 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error("Error refreshing data:", error.message);
-      // Optionally show a toast or alert here
     } finally {
       setRefreshing(false);
     }
@@ -182,14 +182,10 @@ export default function HomeScreen() {
     return null;
   }
 
-  console.log("Notifications:", notifications);
-  console.log("Announcements:", announcements);
-  console.log("Unread Count:", unreadCount);
-
   const formattedProgram = useMemo(() => {
     return getProgramWithAbbreviation(
       studentProfile?.program || "Information Technology",
-      studentProfile?.type // Use 'type' instead of 'degree_type'
+      studentProfile?.type
     );
   }, [studentProfile?.program, studentProfile?.type]);
 
@@ -257,9 +253,7 @@ export default function HomeScreen() {
             <View style={styles.programHeader}>
               <View>
                 <Text style={styles.programLabel}>PROGRAM</Text>
-                <Text style={styles.programTitle}>
-                  {formattedProgram}
-                </Text>
+                <Text style={styles.programTitle}>{formattedProgram}</Text>
               </View>
               <View style={styles.levelBadge}>
                 <Text style={styles.levelText}>
@@ -293,7 +287,7 @@ export default function HomeScreen() {
             <StatCard
               icon={<CreditsIcon />}
               label="Credits"
-              value={studentProfile?.credits || "0"} // Replace Credits component if needed
+              value={<Credits mountedCourses={mountedCourses} />}
               bgColor="#d1fae5"
             />
           </View>

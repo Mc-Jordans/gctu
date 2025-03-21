@@ -13,36 +13,31 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { supabase } from "../lib/supabase"; // Adjust path as needed
 import { useAuth } from "../context/AuthContext"; // Adjust path as needed
 
-export const Credits = ({ mountedCourses }) => {
+export const Credits = ({ mountedCourses = [] }) => {
+  // Default to empty array
   const calculateTotalCredits = () => {
-    // Sum the credit hours for all mounted courses
     const totalCredits = mountedCourses.reduce((sum, course) => {
-      const creditHours = parseInt(course.credit) || 0; // Extract number from "X Credit Hours"
+      const creditHours = parseInt(course.credit) || 0;
       return sum + creditHours;
     }, 0);
-
     return totalCredits;
   };
 
   const totalCredits = calculateTotalCredits();
-
   return <Text>{totalCredits}</Text>;
 };
 
-const Academics = ({ route, navigation }) => {
+const Academics = () => {
   const params = useLocalSearchParams();
   const router = useRouter();
-  const { user, studentProfile, fetchStudentProfile } = useAuth(); // Use studentProfile from AuthContext
+  const { user, studentProfile, fetchStudentProfile, mountedCourses, loading } =
+    useAuth();
   const initialSection = params.section || "Courses";
   const [activeOption, setActiveOption] = useState(initialSection);
   const [registeredCourses, setRegisteredCourses] = useState([]);
-  const [mountedCourses, setMountedCourses] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const currentSemester = "Semester 1"; // Adjust dynamically if needed
 
   useEffect(() => {
     if (params.section) {
@@ -51,37 +46,10 @@ const Academics = ({ route, navigation }) => {
   }, [params.section]);
 
   useEffect(() => {
-    if (user && studentProfile) {
-      fetchMountedCourses(studentProfile);
-    } else if (user) {
-      fetchStudentProfile(user.id); // Fetch profile if not already available
+    if (user && !studentProfile) {
+      fetchStudentProfile(user.id); // Fetch profile if not available
     }
-  }, [user, studentProfile]);
-
-  const fetchMountedCourses = async (profile) => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("id, code, name, level, credit_hours, program, semester")
-        .eq("mounted", true)
-        .eq("program", profile.program)
-        .eq("level", profile.level)
-        .eq("semester", currentSemester);
-      if (error) throw error;
-      setMountedCourses(
-        data.map((course) => ({
-          title: course.name,
-          code: course.code,
-          credit: `${course.credit_hours} Credit Hours`,
-        })) || []
-      );
-    } catch (error) {
-      console.error("Error fetching mounted courses:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user, studentProfile, fetchStudentProfile]);
 
   const handleSelect = (option) => {
     setActiveOption(option);
@@ -91,7 +59,7 @@ const Academics = ({ route, navigation }) => {
     setRefreshing(true);
     try {
       if (user) {
-        await fetchStudentProfile(user.id); // Refetch profile, which triggers course fetch via useEffect
+        await fetchStudentProfile(user.id); // Refetch profile and courses
       }
     } catch (error) {
       console.error("Error refreshing data:", error.message);
@@ -259,7 +227,6 @@ const Academics = ({ route, navigation }) => {
         backgroundColor="transparent"
         barStyle="light-content"
       />
-
       <LinearGradient
         colors={["#3E6993", "#3E6993"]}
         start={{ x: 0, y: 0 }}

@@ -9,7 +9,7 @@ const TabsLayout = () => {
       backBehavior="initialRoute"
       screenOptions={{
         tabBarStyle: {
-          height: 65,
+          height: '10%',
           borderTopWidth: 1,
           borderTopColor: "#E5E7EB",
           position:'absolute',

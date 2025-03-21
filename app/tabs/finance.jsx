@@ -814,10 +814,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F9FC",
   },
   header: {
-    justifyContent: "flex-end", // Align content to bottom of header
+    justifySelf: "flex-end", // Align content to bottom of header
+    alignContent: 'flex-end',
   },
   safeHeader: {
     width: "100%",
+    justifyContent:"center",
   },
   headerContent: {
     flexDirection: "row",

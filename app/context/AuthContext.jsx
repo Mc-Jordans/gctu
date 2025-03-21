@@ -10,6 +10,8 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [studentProfile, setStudentProfile] = useState(null);
+  const [mountedCourses, setMountedCourses] = useState([]); // Added mountedCourses
+  const currentSemester = "Semester 1"; // Adjust dynamically if needed
 
   useEffect(() => {
     // Check for existing session
@@ -27,7 +29,7 @@ export const AuthProvider = ({ children }) => {
           setSession(session);
           setUser(session.user);
 
-          // Fetch student profile
+          // Fetch student profile and courses
           if (session.user) {
             await fetchStudentProfile(session.user.id);
           }
@@ -48,11 +50,12 @@ export const AuthProvider = ({ children }) => {
       setSession(session);
       setUser(session?.user ?? null);
 
-      // Fetch student profile when auth state changes
+      // Fetch student profile and courses when auth state changes
       if (session?.user) {
         await fetchStudentProfile(session.user.id);
       } else {
         setStudentProfile(null);
+        setMountedCourses([]); // Reset mountedCourses when user logs out
       }
 
       setLoading(false);
@@ -66,7 +69,7 @@ export const AuthProvider = ({ children }) => {
   const fetchStudentProfile = async (userId) => {
     try {
       const { data, error } = await supabase
-        .from("students")
+        .from("students") // Changed from "profiles" to "students" per your code
         .select("*")
         .eq("id", userId)
         .single();
@@ -77,8 +80,33 @@ export const AuthProvider = ({ children }) => {
       }
 
       setStudentProfile(data);
+      await fetchMountedCourses(data); // Fetch courses after profile
     } catch (error) {
       console.error("Profile fetch error:", error.message);
+    }
+  };
+
+  const fetchMountedCourses = async (profile) => {
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select("id, code, name, level, credit_hours, program, semester")
+        .eq("mounted", true)
+        .eq("program", profile.program)
+        .eq("level", profile.level)
+        .eq("semester", currentSemester);
+
+      if (error) throw error;
+
+      setMountedCourses(
+        data.map((course) => ({
+          title: course.name,
+          code: course.code,
+          credit: `${course.credit_hours} Credit Hours`,
+        })) || []
+      );
+    } catch (error) {
+      console.error("Error fetching mounted courses:", error.message);
     }
   };
 
@@ -98,7 +126,7 @@ export const AuthProvider = ({ children }) => {
       setUser(user);
       setSession(session);
 
-      // Fetch student profile
+      // Fetch student profile and courses
       if (user) {
         await fetchStudentProfile(user.id);
       }
@@ -122,6 +150,7 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setSession(null);
         setStudentProfile(null);
+        setMountedCourses([]); // Reset mountedCourses on logout
       }
     } catch (error) {
       Alert.alert("Logout Error", error.message);
@@ -133,7 +162,6 @@ export const AuthProvider = ({ children }) => {
   const forgotPassword = async (identifier) => {
     setLoading(true);
     try {
-      // Convert index number to email if needed
       let email = identifier;
       if (!identifier.includes("@")) {
         email = `${identifier}@live.gctu.edu.gh`;
@@ -168,6 +196,7 @@ export const AuthProvider = ({ children }) => {
         session,
         loading,
         studentProfile,
+        mountedCourses, // Added to context value
         signIn,
         signOut,
         forgotPassword,
