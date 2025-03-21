@@ -33,6 +33,18 @@ const AcademicYear = () => {
   );
 };
 
+const getProgramWithAbbreviation = (program, type) => {
+  const degreeAbbreviations = {
+    Degree: "BSc",
+    Diploma: "Dip",
+    Masters: "MSc",
+    PhD: "PhD",
+  };
+
+  const abbreviation = degreeAbbreviations[type] || "";
+  return abbreviation ? `${abbreviation}. ${program}` : program;
+};
+
 const QuickAccess = React.memo(({ title, icon, BgColor, color }) => {
   const router = useRouter();
 
@@ -166,13 +178,20 @@ export default function HomeScreen() {
   }, [userTitle, displayName]);
 
   if (!user) {
-    router.replace("/login");
+    router.replace("/");
     return null;
   }
 
   console.log("Notifications:", notifications);
   console.log("Announcements:", announcements);
   console.log("Unread Count:", unreadCount);
+
+  const formattedProgram = useMemo(() => {
+    return getProgramWithAbbreviation(
+      studentProfile?.program || "Information Technology",
+      studentProfile?.type // Use 'type' instead of 'degree_type'
+    );
+  }, [studentProfile?.program, studentProfile?.type]);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#1075E9" }}>
@@ -239,7 +258,7 @@ export default function HomeScreen() {
               <View>
                 <Text style={styles.programLabel}>PROGRAM</Text>
                 <Text style={styles.programTitle}>
-                  {studentProfile?.program || "BSc. Information Technology"}
+                  {formattedProgram}
                 </Text>
               </View>
               <View style={styles.levelBadge}>
@@ -274,7 +293,7 @@ export default function HomeScreen() {
             <StatCard
               icon={<CreditsIcon />}
               label="Credits"
-              value={studentProfile?.credits || "15"} // Replace Credits component if needed
+              value={studentProfile?.credits || "0"} // Replace Credits component if needed
               bgColor="#d1fae5"
             />
           </View>

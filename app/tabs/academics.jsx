@@ -8,73 +8,97 @@ import {
   StatusBar,
   RefreshControl,
 } from "react-native";
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { supabase } from "../lib/supabase"; // Adjust path as needed
+import { useAuth } from "../context/AuthContext"; // Adjust path as needed
 
-export const Credits = () => {
-  return <Text>15</Text>;
+export const Credits = ({ mountedCourses }) => {
+  const calculateTotalCredits = () => {
+    // Sum the credit hours for all mounted courses
+    const totalCredits = mountedCourses.reduce((sum, course) => {
+      const creditHours = parseInt(course.credit) || 0; // Extract number from "X Credit Hours"
+      return sum + creditHours;
+    }, 0);
+
+    return totalCredits;
+  };
+
+  const totalCredits = calculateTotalCredits();
+
+  return <Text>{totalCredits}</Text>;
 };
 
 const Academics = ({ route, navigation }) => {
   const params = useLocalSearchParams();
+  const router = useRouter();
+  const { user, studentProfile, fetchStudentProfile } = useAuth(); // Use studentProfile from AuthContext
   const initialSection = params.section || "Courses";
   const [activeOption, setActiveOption] = useState(initialSection);
   const [registeredCourses, setRegisteredCourses] = useState([]);
+  const [mountedCourses, setMountedCourses] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const currentSemester = "Semester 1"; // Adjust dynamically if needed
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (params.section) {
       setActiveOption(params.section);
     }
   }, [params.section]);
 
+  useEffect(() => {
+    if (user && studentProfile) {
+      fetchMountedCourses(studentProfile);
+    } else if (user) {
+      fetchStudentProfile(user.id); // Fetch profile if not already available
+    }
+  }, [user, studentProfile]);
+
+  const fetchMountedCourses = async (profile) => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("courses")
+        .select("id, code, name, level, credit_hours, program, semester")
+        .eq("mounted", true)
+        .eq("program", profile.program)
+        .eq("level", profile.level)
+        .eq("semester", currentSemester);
+      if (error) throw error;
+      setMountedCourses(
+        data.map((course) => ({
+          title: course.name,
+          code: course.code,
+          credit: `${course.credit_hours} Credit Hours`,
+        })) || []
+      );
+    } catch (error) {
+      console.error("Error fetching mounted courses:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSelect = (option) => {
     setActiveOption(option);
   };
 
-  const courses = useMemo(
-    () => [
-      {
-        title: "Data Communication",
-        code: "IT 431",
-        credit: "3 Credit Hours",
-      },
-      {
-        title: "Visual Basic .Net Programming",
-        code: "IT 201",
-        credit: "3 Credit Hours",
-      },
-      {
-        title: "Internet and Information Security",
-        code: "IT 253",
-        credit: "3 Credit Hours",
-      },
-      {
-        title: "Computer Architecture",
-        code: "IT 231",
-        credit: "3 Credit Hours",
-      },
-      {
-        title: "Systems Administration",
-        code: "IT 212",
-        credit: "3 Credit Hours",
-      },
-    ],
-    []
-  );
-
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Simulate a network request
-    setTimeout(() => {
-      // You would typically fetch fresh data here
-      // For now, we'll just reset the refreshing state
-      setRefreshing(false);
-    }, 1500);
-  }, []);
+    try {
+      if (user) {
+        await fetchStudentProfile(user.id); // Refetch profile, which triggers course fetch via useEffect
+      }
+    } catch (error) {
+      console.error("Error refreshing data:", error.message);
+    } finally {
+      setTimeout(() => setRefreshing(false), 1500);
+    }
+  }, [user, fetchStudentProfile]);
 
   const handleRegisterCourse = (courseCode) => {
     if (registeredCourses.includes(courseCode)) {
@@ -87,16 +111,15 @@ const Academics = ({ route, navigation }) => {
   };
 
   const handleSelectAll = () => {
-    if (registeredCourses.length === courses.length) {
-      // If all courses are already selected, deselect all
+    if (registeredCourses.length === mountedCourses.length) {
       setRegisteredCourses([]);
     } else {
-      // Otherwise, select all courses
-      setRegisteredCourses(courses.map((course) => course.code));
+      setRegisteredCourses(mountedCourses.map((course) => course.code));
     }
   };
 
-  const areAllCoursesSelected = registeredCourses.length === courses.length;
+  const areAllCoursesSelected =
+    registeredCourses.length === mountedCourses.length;
 
   const CourseCard = React.memo(({ title, code, credit }) => {
     const isRegistered = registeredCourses.includes(code);
@@ -130,7 +153,7 @@ const Academics = ({ route, navigation }) => {
   const SelectAllHeader = () => (
     <View style={styles.selectAllContainer}>
       <Text style={styles.selectAllText}>
-        {`${registeredCourses.length} of ${courses.length} Courses Selected`}
+        {`${registeredCourses.length} of ${mountedCourses.length} Courses Selected`}
       </Text>
       <Pressable
         style={[
@@ -154,9 +177,18 @@ const Academics = ({ route, navigation }) => {
   const renderContent = () => {
     switch (activeOption) {
       case "Courses":
+        if (loading || !studentProfile) {
+          return (
+            <View style={styles.emptyContent}>
+              <Text style={styles.emptyText}>
+                {loading ? "Loading courses..." : "Fetching profile..."}
+              </Text>
+            </View>
+          );
+        }
         return (
           <FlatList
-            data={courses}
+            data={mountedCourses}
             keyExtractor={(item) => item.code}
             renderItem={({ item }) => (
               <CourseCard
@@ -180,11 +212,19 @@ const Academics = ({ route, navigation }) => {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                colors={["rgb(71, 131, 235)"]} // Android
-                tintColor="rgb(71, 131, 235)" // iOS
-                title="Refreshing..." // iOS
-                titleColor="rgb(71, 131, 235)" // iOS
+                colors={["rgb(71, 131, 235)"]}
+                tintColor="rgb(71, 131, 235)"
+                title="Refreshing..."
+                titleColor="rgb(71, 131, 235)"
               />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContent}>
+                <Text style={styles.emptyText}>
+                  No mounted courses available for your program and level this
+                  semester.
+                </Text>
+              </View>
             }
           />
         );
@@ -206,6 +246,11 @@ const Academics = ({ route, navigation }) => {
         return null;
     }
   };
+
+  if (!user) {
+    router.replace("/login");
+    return null;
+  }
 
   return (
     <View style={styles.container}>
@@ -391,7 +436,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderLeftWidth: 4,
     borderLeftColor: "rgb(6, 88, 160)",
-    height: 80, // Fixed height to ensure consistent sizing
+    height: 80,
   },
   codeContainer: {
     backgroundColor: "rgba(6, 88, 160, 0.1)",
