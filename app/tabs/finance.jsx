@@ -1,3 +1,5 @@
+"use client";
+
 import {
   StyleSheet,
   Text,
@@ -11,20 +13,27 @@ import {
   RefreshControl,
   FlatList,
   Image,
-  useWindowDimensions,
+  useWindowDimensions, // Add this import
   Platform,
   Alert,
 } from "react-native";
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import BellIcon from "../../assets/SVG/bell";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { DollarSign } from "lucide-react-native";
+import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Big from "big.js";
 
-// Remove the hardcoded exchange rate constant
-// const USD_TO_GHS_RATE = 13.5;
+// Exchange rate constant (1 USD = 13.5 GHS)
+const USD_TO_GHS_RATE = 13.5;
+
+// API Configuration
+const API_KEY = Constants.expoConfig?.extra?.exchangeRateApiKey;
+const API_URL = `https://v6.exchangerate-api.com/v6/${API_KEY}/pair`;
 
 // Payment Item Component
 const PaymentItem = ({
@@ -81,11 +90,11 @@ const AccountCard = ({
   isCedi,
   toggleCurrency,
   conversionRate,
-  isLoadingRate,
+  isLoadingRate, // Add this prop
 }) => {
   const { width } = useWindowDimensions();
   const displayAmount = isCedi
-    ? (parseFloat(totalBalance) * conversionRate).toFixed(2)
+    ? new Big(totalBalance).times(conversionRate).toFixed(2)
     : totalBalance;
 
   return (
@@ -93,56 +102,47 @@ const AccountCard = ({
       colors={["#2D5D8A", "#4D8AC8", "#69B1F9"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.accountCard, { height: width * 0.55 }]} // Responsive height
+      style={[styles.accountCard, { height: width * 0.55 }]}
     >
-      {/* Card decoration elements */}
       <View style={styles.cardDecoration}>
         <View style={styles.circle1} />
         <View style={styles.circle2} />
       </View>
 
-      {/* Card Content */}
       <View style={styles.cardContent}>
         <View style={styles.balanceContainer}>
           <Text style={styles.cardTitle}>Account Statement</Text>
           <Text style={styles.cardDescription}>Balance Due</Text>
           <View style={styles.amountContainer}>
             <Text style={styles.currencySymbol}>{isCedi ? "₵" : "$"}</Text>
-            {isLoadingRate && isCedi ? (
-              <ActivityIndicator
-                size="small"
-                color="#fff"
-                style={{ marginLeft: 10 }}
-              />
-            ) : (
-              <Text style={styles.amount}>{displayAmount}</Text>
-            )}
+            <Text style={styles.amount}>{displayAmount}</Text>
           </View>
 
           <View style={styles.currencySymbolRight}>
             <TouchableOpacity
               style={styles.currencySymbolRightIcon}
               onPress={toggleCurrency}
-              disabled={isLoadingRate}
             >
-              {isLoadingRate ? (
-                <ActivityIndicator size="small" color="#4D8AC8" />
-              ) : isCedi ? (
+              {isCedi ? (
                 <Text
-                  style={{ fontSize: 20, color: "#4D8AC8", fontWeight: "bold" }}
+                  style={{ fontSize: 20, color: "#fff", fontWeight: "bold" }}
                 >
                   ₵
                 </Text>
               ) : (
-                <DollarSign size={20} color="#4D8AC8" />
+                <DollarSign size={20} color="#fff" />
               )}
             </TouchableOpacity>
           </View>
+          {isLoadingRate && (
+            <View style={styles.rateLoading}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.rateLoadingText}>Updating rate...</Text>
+            </View>
+          )}
         </View>
 
-        {/* Bottom Action Area */}
         <View style={styles.bottomRow}>
-          {/* Pay Now Button */}
           <TouchableOpacity
             style={styles.payButton}
             onPress={onPayNow}
@@ -159,7 +159,6 @@ const AccountCard = ({
           </TouchableOpacity>
         </View>
 
-        {/* GCTU Logo at Bottom Left */}
         <View style={styles.logoContainer}>
           <Image
             source={require("../../assets/images/gctuLogo.png")}
@@ -172,7 +171,6 @@ const AccountCard = ({
     </LinearGradient>
   );
 };
-
 // Empty State Component
 const EmptyState = ({ type }) => {
   return (
@@ -339,55 +337,12 @@ const Finance = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [paymentInProgress, setPaymentInProgress] = useState(false);
-  const [isCedi, setIsCedi] = useState(false); // Currency toggle state
-  const [exchangeRate, setExchangeRate] = useState(1); // Default exchange rate
-  const [isLoadingRate, setIsLoadingRate] = useState(false); // Loading state for exchange rate
+  const [isCedi, setIsCedi] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(USD_TO_GHS_RATE);
+  const [isLoadingRate, setIsLoadingRate] = useState(false);
 
   const academicYears = ["2023-2024", "2024-2025", "2025-2026"];
   const paymentTypes = ["All", "Tuition", "Housing", "Books", "Fees"];
-
-  // Function to fetch exchange rate
-  const fetchExchangeRate = async (
-    fromCurrency = "USD",
-    toCurrency = "GHS"
-  ) => {
-    setIsLoadingRate(true);
-    const API_KEY = "ebd61213c021ff0ac0adf562";
-    const API_URL = `https://v6.exchangerate-api.com/v6/${API_KEY}/pair/${fromCurrency}/${toCurrency}`;
-
-    try {
-      const response = await fetch(API_URL);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch exchange rate");
-      }
-
-      const data = await response.json();
-      if (data.result === "success") {
-        setExchangeRate(data.conversion_rate);
-      } else {
-        throw new Error("Invalid response from exchange rate API");
-      }
-    } catch (error) {
-      console.error("Exchange rate error:", error);
-      Alert.alert(
-        "Exchange Rate Error",
-        "Could not fetch the latest exchange rate. Using default rate.",
-        [{ text: "OK" }]
-      );
-      // Fallback to a default rate if API fails
-      setExchangeRate(13.5);
-    } finally {
-      setIsLoadingRate(false);
-    }
-  };
-
-  // Fetch exchange rate when currency is toggled to GHS
-  useEffect(() => {
-    if (isCedi) {
-      fetchExchangeRate();
-    }
-  }, [isCedi]);
 
   const fullPaymentHistory = [
     {
@@ -475,10 +430,85 @@ const Finance = () => {
   const [upcomingPayments, setUpcomingPayments] =
     useState(fullUpcomingPayments);
 
-  // Toggle currency function
-  const toggleCurrency = () => {
-    setIsCedi(!isCedi);
+  // Function to fetch exchange rate
+
+  const fetchWithRetry = async (url, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+        return response;
+      } catch (error) {
+        if (i === maxRetries - 1) {
+          throw error; // Throw on last retry
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+      }
+    }
+    throw new Error("All retries failed"); // Ensure a return or throw
   };
+
+  const fetchExchangeRate = async (from = "USD", to = "GHS") => {
+    if (!API_KEY) {
+      console.error("Exchange rate API key is missing");
+      setExchangeRate(USD_TO_GHS_RATE);
+      Alert.alert(
+        "Configuration Error",
+        "API key is missing. Using default rate."
+      );
+      return;
+    }
+
+    setIsLoadingRate(true);
+    let cacheTime;
+    try {
+      const cachedRate = await AsyncStorage.getItem("exchangeRate");
+      cacheTime = await AsyncStorage.getItem("exchangeRateTime");
+      const isFresh = cacheTime && Date.now() - parseInt(cacheTime) < 3600000;
+
+      if (cachedRate && isFresh) {
+        setExchangeRate(parseFloat(cachedRate));
+        return;
+      }
+
+      const response = await fetchWithRetry(`${API_URL}/${from}/${to}`);
+      const data = await response.json();
+
+      if (data.result === "success") {
+        setExchangeRate(data.conversion_rate);
+        await AsyncStorage.setItem(
+          "exchangeRate",
+          data.conversion_rate.toString()
+        );
+        await AsyncStorage.setItem("exchangeRateTime", Date.now().toString());
+      } else {
+        throw new Error("API response unsuccessful");
+      }
+    } catch (error) {
+      console.error("Exchange rate fetch failed:", error);
+      setExchangeRate(USD_TO_GHS_RATE);
+      Alert.alert(
+        "Rate Update Failed",
+        `Using cached rate. Last updated: ${
+          cacheTime ? new Date(parseInt(cacheTime)).toLocaleTimeString() : "N/A"
+        }`
+      );
+    } finally {
+      setIsLoadingRate(false);
+    }
+  };
+
+  const toggleCurrency = () => {
+    const newIsCedi = !isCedi;
+    setIsCedi(newIsCedi);
+    if (newIsCedi) {
+      fetchExchangeRate("USD", "GHS");
+    }
+  };
+
+  useEffect(() => {
+    fetchExchangeRate("USD", "GHS");
+  }, []);
 
   const filteredHistory = useMemo(() => {
     return fullPaymentHistory.filter((payment) => {
@@ -511,16 +541,10 @@ const Finance = () => {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-
-    // Refresh exchange rate if in cedi mode
-    if (isCedi) {
-      fetchExchangeRate();
-    }
-
     setTimeout(() => {
       setRefreshing(false);
     }, 1500);
-  }, [isCedi]);
+  }, []);
 
   const handleLogout = () => {
     setLogoutModalVisible(true);
@@ -570,11 +594,10 @@ const Finance = () => {
       payment={item}
       isHistory={activeTab === "history"}
       currencySymbol={isCedi ? "₵" : "$"}
-      conversionRate={isCedi ? exchangeRate : 1}
+      conversionRate={exchangeRate}
     />
   );
 
-  // Calculate header height based on device
   const headerHeight =
     Platform.OS === "ios"
       ? height * 0.13
@@ -587,7 +610,6 @@ const Finance = () => {
         backgroundColor="transparent"
         barStyle="light-content"
       />
-
       <LinearGradient
         colors={["#2D5D8A", "#69B1F9", "#4D8AC8"]}
         start={{ x: 0, y: 0 }}
@@ -655,7 +677,7 @@ const Finance = () => {
           isCedi={isCedi}
           toggleCurrency={toggleCurrency}
           conversionRate={exchangeRate}
-          isLoadingRate={isLoadingRate}
+          isLoadingRate={isLoadingRate} // Pass the loading state
         />
 
         <View style={styles.quickActions}>
@@ -784,168 +806,243 @@ const Finance = () => {
   );
 };
 
+export default Finance;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F9FF",
+    backgroundColor: "#F7F9FC",
   },
   header: {
-    backgroundColor: "#3372EF",
-    paddingTop: 0,
+    justifyContent: "flex-end", // Align content to bottom of header
   },
   safeHeader: {
-    flex: 1,
+    width: "100%",
   },
   headerContent: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingVertical: 10,
     paddingHorizontal: 20,
-    marginTop: 10,
   },
   headerTitle: {
+    fontWeight: "600",
     color: "#fff",
-    fontWeight: "bold",
   },
   headerIcons: {
     flexDirection: "row",
+    gap: 15,
   },
   iconButton: {
-    marginLeft: 15,
+    padding: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 12,
+  },
+  logoutButton: {
+    padding: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 12,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
   },
-  paymentProcessingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
+  loadingContainer: {
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
+    paddingVertical: 40,
   },
-  paymentProcessingContent: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  paymentProcessingText: {
+  loadingText: {
     marginTop: 10,
     fontSize: 16,
-    fontWeight: "600",
+    color: "#666",
   },
   accountCard: {
-    borderRadius: 15,
+    width: "100%",
+    padding: 20,
+    borderRadius: 24,
     marginBottom: 20,
-    overflow: "hidden", // Ensures the gradient doesn't bleed out of the rounded corners
-    position: "relative", // Required for absolute positioning of children
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 10, // Android shadow
   },
+
+  // Decorative elements
   cardDecoration: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: "100%",
-    height: "100%",
+    right: 0,
+    bottom: 0,
   },
   circle1: {
     position: "absolute",
-    top: -50,
-    left: -50,
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    top: -70,
+    right: -50,
   },
   circle2: {
     position: "absolute",
-    bottom: -30,
-    right: -30,
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    bottom: -100,
+    left: -80,
   },
+
+  // Card content
   cardContent: {
-    padding: 20,
     flex: 1,
     justifyContent: "space-between",
+    zIndex: 1,
   },
   balanceContainer: {
-    marginBottom: 20,
+    marginBottom: 15,
   },
   cardTitle: {
-    fontSize: 16,
-    color: "#fff",
-    opacity: 0.7,
-    marginBottom: 5,
-  },
-  cardDescription: {
     fontSize: 18,
+    fontWeight: "700",
     color: "#fff",
-    fontWeight: "bold",
-    marginBottom: 5,
+    marginBottom: 6,
+  },
+
+  currencySymbolRight: {
+    position: "absolute",
+    right: 10,
+    backgroundColor: "rgba(255, 255, 255,0.3)",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  currencySymbolRightIcon: {
+    position: "absolute",
+    right: -5,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(104, 101, 101, 0.43)",
+  },
+
+  cardDescription: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.85)",
+    marginBottom: 20,
+    marginTop: 20,
   },
   amountContainer: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
+    marginBottom: 16,
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 20,
+    fontWeight: "700",
     color: "#fff",
-    marginRight: 5,
+    marginRight: 4,
+    marginBottom: 3,
   },
   amount: {
-    fontSize: 36,
+    fontSize: 32,
+    fontWeight: "800",
     color: "#fff",
-    fontWeight: "bold",
   },
-  currencySymbolRight: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-  },
-  currencySymbolRightIcon: {
-    padding: 5,
-    borderRadius: 5,
-  },
-  bottomRow: {
+  detailsContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.85)",
+    fontWeight: "500",
+    marginLeft: 6,
+    marginRight: 4,
+  },
+  detailText: {
+    fontSize: 13,
+    color: "#fff",
+    fontWeight: "600",
+  },
+
+  // Bottom section
+  bottomRow: {
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
   },
   payButton: {
-    backgroundColor: "#3372EF",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.4)",
+    right: 0,
+    position: "absolute",
   },
   payButtonText: {
     color: "#fff",
-    fontWeight: "bold",
     fontSize: 16,
+    fontWeight: "700",
+    marginRight: 8,
   },
   buttonIcon: {
-    marginLeft: 5,
+    marginLeft: 2,
   },
+
+  // Logo section
   logoContainer: {
     position: "absolute",
-    bottom: 10,
-    left: 10,
+    bottom: -16,
+    left: -10,
+    flexDirection: "row",
     alignItems: "center",
+    padding: 10,
   },
   logoImage: {
-    width: 40,
-    height: 40,
+    width: 24,
+    height: 24,
+    marginRight: 6,
   },
   logoText: {
+    fontSize: 16,
+    fontWeight: "bold",
     color: "#fff",
-    fontSize: 12,
-    marginTop: 2,
   },
   quickActions: {
     flexDirection: "row",
@@ -955,19 +1052,20 @@ const styles = StyleSheet.create({
   actionButton: {
     backgroundColor: "#fff",
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
   actionText: {
-    marginTop: 5,
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#3372EF",
+    color: "#333",
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: "center",
   },
   filterContainer: {
     flexDirection: "row",
@@ -976,148 +1074,126 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   filterInfo: {
-    backgroundColor: "#E4EDFB",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
+    flex: 1,
   },
   filterInfoText: {
-    color: "#3372EF",
     fontSize: 14,
+    color: "#555",
+    fontWeight: "500",
   },
   filterButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: "#E9EFFD",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    gap: 5,
   },
   filterButtonText: {
+    fontSize: 13,
     color: "#3372EF",
-    fontSize: 14,
-    marginLeft: 5,
+    fontWeight: "600",
   },
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#F0F4F9",
-    borderRadius: 10,
-    marginBottom: 20,
+    marginBottom: 15,
+    borderRadius: 8,
+    backgroundColor: "#E9EFFD",
+    padding: 5,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: 10,
     alignItems: "center",
+    borderRadius: 6,
   },
   activeTab: {
     backgroundColor: "#fff",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3,
+    elevation: 2,
   },
   tabText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#7A8FA6",
+    fontSize: 14,
+    color: "#666",
   },
   activeTabText: {
     color: "#3372EF",
+    fontWeight: "600",
   },
   paymentsContainer: {
-    flex: 1,
+    marginBottom: 20,
   },
   paymentItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderRadius: 12,
     marginBottom: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
   paymentInfo: {
     flex: 1,
   },
   paymentType: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "#333",
+    marginBottom: 4,
   },
   paymentDate: {
-    fontSize: 14,
-    color: "#7A8FA6",
+    fontSize: 13,
+    color: "#777",
   },
   paymentAmount: {
     alignItems: "flex-end",
   },
   paymentAmountText: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#333",
+    marginBottom: 4,
   },
   statusBadge: {
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 5,
-    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: "600",
-  },
-  emptyState: {
-    alignItems: "center",
-    marginTop: 50,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: "#C5CEE0",
-    marginTop: 10,
-    textAlign: "center",
-  },
-  loadingContainer: {
-    alignItems: "center",
-    marginTop: 50,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: "#7A8FA6",
-    marginTop: 10,
+    fontWeight: "500",
   },
   modalOverlay: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: "#fff",
-    borderRadius: 15,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
-    maxWidth: "90%",
+    paddingBottom: 30,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 18,
+    fontWeight: "700",
     color: "#333",
   },
   filterSection: {
@@ -1127,59 +1203,120 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   filterOptions: {
     flexDirection: "row",
     flexWrap: "wrap",
+    gap: 10,
   },
   filterOption: {
-    backgroundColor: "#F0F4F9",
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    paddingHorizontal: 15,
     borderRadius: 8,
-    marginRight: 10,
-    marginBottom: 10,
+    backgroundColor: "#F0F4F8",
+    marginBottom: 8,
   },
   selectedFilterOption: {
-    backgroundColor: "#3372EF",
+    backgroundColor: "#E1EBFF",
+    borderColor: "#3372EF",
+    borderWidth: 1,
   },
   filterOptionText: {
     fontSize: 14,
-    color: "#7A8FA6",
+    color: "#555",
   },
   selectedFilterOptionText: {
-    color: "#fff",
+    color: "#3372EF",
+    fontWeight: "600",
   },
   modalButtonContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
     marginTop: 20,
+    gap: 10,
   },
   clearButton: {
-    backgroundColor: "#fff",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    flex: 1,
+    backgroundColor: "#F0F4F8",
+    paddingVertical: 14,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#3372EF",
+    alignItems: "center",
   },
   clearButtonText: {
-    color: "#3372EF",
+    color: "#555",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "500",
   },
   applyButton: {
+    flex: 2,
     backgroundColor: "#3372EF",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderRadius: 10,
+    alignItems: "center",
   },
   applyButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: "#8F9BB3",
+    marginTop: 12,
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
+  paymentProcessingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255, 255, 255, 0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+  },
+  paymentProcessingContent: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    width: "80%",
+  },
+  paymentProcessingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "500",
+  },
+  rateLoading: {
+    position: "absolute",
+    right: 60,
+    top: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    padding: 5,
+    borderRadius: 5,
+  },
+  rateLoadingText: {
+    color: "#fff",
+    fontSize: 12,
+    marginLeft: 5,
+  },
 });
-
-export default Finance;
