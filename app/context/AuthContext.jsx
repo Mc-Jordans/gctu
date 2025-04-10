@@ -10,11 +10,11 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [studentProfile, setStudentProfile] = useState(null);
-  const [mountedCourses, setMountedCourses] = useState([]); // Added mountedCourses
+  const [mountedCourses, setMountedCourses] = useState([]);
+  const [profileImage, setProfileImage] = useState(null);
   const currentSemester = "Semester 1"; // Adjust dynamically if needed
 
   useEffect(() => {
-    // Check for existing session
     const checkSession = async () => {
       try {
         const {
@@ -28,8 +28,6 @@ export const AuthProvider = ({ children }) => {
         if (session) {
           setSession(session);
           setUser(session.user);
-
-          // Fetch student profile and courses
           if (session.user) {
             await fetchStudentProfile(session.user.id);
           }
@@ -43,19 +41,18 @@ export const AuthProvider = ({ children }) => {
 
     checkSession();
 
-    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
 
-      // Fetch student profile and courses when auth state changes
       if (session?.user) {
         await fetchStudentProfile(session.user.id);
       } else {
         setStudentProfile(null);
-        setMountedCourses([]); // Reset mountedCourses when user logs out
+        setMountedCourses([]);
+        setProfileImage(null);
       }
 
       setLoading(false);
@@ -69,7 +66,7 @@ export const AuthProvider = ({ children }) => {
   const fetchStudentProfile = async (userId) => {
     try {
       const { data, error } = await supabase
-        .from("students") // Changed from "profiles" to "students" per your code
+        .from("students")
         .select("*")
         .eq("id", userId)
         .single();
@@ -80,7 +77,10 @@ export const AuthProvider = ({ children }) => {
       }
 
       setStudentProfile(data);
-      await fetchMountedCourses(data); // Fetch courses after profile
+      if (data.profile_image_url) {
+        setProfileImage(data.profile_image_url);
+      }
+      await fetchMountedCourses(data);
     } catch (error) {
       console.error("Profile fetch error:", error.message);
     }
@@ -125,8 +125,6 @@ export const AuthProvider = ({ children }) => {
 
       setUser(user);
       setSession(session);
-
-      // Fetch student profile and courses
       if (user) {
         await fetchStudentProfile(user.id);
       }
@@ -150,7 +148,8 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setSession(null);
         setStudentProfile(null);
-        setMountedCourses([]); // Reset mountedCourses on logout
+        setMountedCourses([]);
+        setProfileImage(null);
       }
     } catch (error) {
       Alert.alert("Logout Error", error.message);
@@ -196,7 +195,9 @@ export const AuthProvider = ({ children }) => {
         session,
         loading,
         studentProfile,
-        mountedCourses, // Added to context value
+        profileImage,
+        setProfileImage,
+        mountedCourses,
         signIn,
         signOut,
         forgotPassword,

@@ -185,6 +185,7 @@ const Notifications = () => {
           }}
         >
           <Text
+            
             style={[
               styles.tabText,
               activeTab === "notifications" && styles.activeTabText,

@@ -4,7 +4,7 @@
     "slug": "gctu",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/splash-icon.webp",
+    "icon": "./assets/images/gctuLogo.png",
     "scheme": "gctu",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -13,21 +13,21 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/splash-icon.webp",
+        "foregroundImage": "./assets/images/gctuLogo.png",
         "backgroundColor": "#ffffff"
       }
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/splash-icon.webp"
+      "favicon": "./assets/images/gctuLogo.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.webp",
+          "image": "./assets/images/gctuLogo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"

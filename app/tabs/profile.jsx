@@ -9,12 +9,14 @@ import {
   Platform,
   RefreshControl,
   Dimensions,
+  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import BellIcon from "../../assets/SVG/bell";
 import ConfirmationModal from "../components/ConfirmationModal";
 import * as ImagePicker from "expo-image-picker";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationsContext";
 import { useRouter } from "expo-router";
@@ -22,10 +24,16 @@ import { useRouter } from "expo-router";
 const { width } = Dimensions.get("window");
 
 const Profile = () => {
-  const [image, setImage] = useState(null);
+  const {
+    signOut,
+    user,
+    studentProfile,
+    fetchStudentProfile,
+    profileImage,
+    setProfileImage,
+  } = useAuth();
   const [expandedCard, setExpandedCard] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const { signOut, user, studentProfile, fetchStudentProfile } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
   const {
@@ -38,20 +46,75 @@ const Profile = () => {
 
   const scrollViewRef = useRef(null);
 
+  const fallbackName =
+    studentProfile?.first_name && studentProfile?.last_name
+      ? `${studentProfile.first_name} ${studentProfile.last_name}`
+      : user?.user_metadata?.full_name ||
+        user?.email?.split("@")[0] ||
+        "Student";
+
+  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    fallbackName
+  )}&background=298CFE&color=fff&size=128`;
+
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
     });
 
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      const imageUri = result.assets[0].uri;
+      setProfileImage(imageUri); // Immediate UI feedback
+
+      try {
+        const fileExt = imageUri.split(".").pop();
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const filePath = `profile-images/${fileName}`;
+
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(filePath, blob, {
+            contentType: `image/${fileExt}`,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error("Upload error:", uploadError.message);
+          Alert.alert("Upload Error", "Failed to upload image to storage.");
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(filePath);
+
+        const imageUrl = urlData.publicUrl;
+
+        const { error: updateError } = await supabase
+          .from("students")
+          .update({ profile_image_url: imageUrl })
+          .eq("id", user.id);
+
+        if (updateError) {
+          console.error("Update error:", updateError.message);
+          Alert.alert("Database Error", "Failed to save image URL to profile.");
+          return;
+        }
+
+        setProfileImage(imageUrl);
+      } catch (error) {
+        console.error("Image upload error:", error.message);
+        Alert.alert("Error", "Something went wrong during image upload.");
+      }
     }
   };
 
-  // On refresh events
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -82,7 +145,7 @@ const Profile = () => {
   };
 
   const responsiveFontSize = (baseSize) => {
-    const scaleFactor = Math.min(width / 380, 1.2); // Cap the scaling
+    const scaleFactor = Math.min(width / 380, 1.2);
     return Math.round(baseSize * scaleFactor);
   };
 
@@ -94,13 +157,12 @@ const Profile = () => {
     try {
       await signOut();
       setModalVisible(false);
-      router.replace("/"); // Redirect to login
+      router.replace("/");
     } catch (error) {
       console.error("Logout error:", error);
     }
   };
 
-  // Extract display name from profile or user data
   const displayName =
     studentProfile?.first_name && studentProfile?.last_name
       ? `${studentProfile.first_name} ${studentProfile.last_name}`
@@ -225,7 +287,6 @@ const Profile = () => {
     },
   ];
 
-  // Calculate stats based on student profile data
   const statsItems = [
     {
       title: "Courses",
@@ -280,11 +341,7 @@ const Profile = () => {
 
           <View style={styles.profileImageContainer}>
             <Image
-              source={
-                image
-                  ? { uri: image }
-                  : require("../../assets/images/profileSample.jpg")
-              }
+              source={profileImage ? { uri: profileImage } : { uri: avatarUrl }}
               style={styles.profileImage}
             />
             <TouchableOpacity
@@ -438,6 +495,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.8)",
+    resizeMode: "cover",
   },
   editImageButton: {
     position: "absolute",

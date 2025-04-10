@@ -13,11 +13,12 @@ import {
   RefreshControl,
   FlatList,
   Image,
-  useWindowDimensions, // Add this import
+  useWindowDimensions,
   Platform,
   Alert,
 } from "react-native";
 import { useState, useEffect, useMemo, useCallback } from "react";
+import PropTypes from "prop-types";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,21 +28,38 @@ import { DollarSign } from "lucide-react-native";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Big from "big.js";
+import { useNotifications } from "../context/NotificationsContext";
+import { useRouter } from "expo-router";
 
 // Exchange rate constant (1 USD = 13.5 GHS)
 const USD_TO_GHS_RATE = 13.5;
 
 // API Configuration
-const API_KEY = Constants.expoConfig?.extra?.exchangeRateApiKey;
+const API_KEY = Constants.expoConfig?.extra?.exchangeRateApiKey || null;
+if (!API_KEY) {
+  console.error("API_KEY is missing. Please check your Expo configuration.");
+}
 const API_URL = `https://v6.exchangerate-api.com/v6/${API_KEY}/pair`;
 
 // Payment Item Component
 const PaymentItem = ({
   payment,
   isHistory = false,
+  conversionRate,
   currencySymbol,
-  conversionRate = 1,
 }) => {
+  const convertedAmount = useMemo(() => {
+    try {
+      if (typeof payment.amount !== "number" || isNaN(payment.amount)) {
+        throw new Error("Invalid payment amount");
+      }
+      return new Big(payment.amount).times(conversionRate).toFixed(2);
+    } catch (error) {
+      console.error("Error calculating converted amount:", error.message);
+      return "0.00";
+    }
+  }, [payment.amount, conversionRate]);
+
   return (
     <View style={styles.paymentItem}>
       <View style={styles.paymentInfo}>
@@ -53,7 +71,7 @@ const PaymentItem = ({
       <View style={styles.paymentAmount}>
         <Text style={styles.paymentAmountText}>
           {currencySymbol}
-          {(payment.amount * conversionRate).toFixed(2)}
+          {convertedAmount}
         </Text>
         {isHistory && (
           <View
@@ -68,9 +86,7 @@ const PaymentItem = ({
             <Text
               style={[
                 styles.statusText,
-                {
-                  color: payment.status === "Paid" ? "#0A803B" : "#FF8A00",
-                },
+                { color: payment.status === "Paid" ? "#0A803B" : "#FF8A00" },
               ]}
             >
               {payment.status}
@@ -82,20 +98,31 @@ const PaymentItem = ({
   );
 };
 
-// Account Card Component (Updated)
+PaymentItem.propTypes = {
+  payment: PropTypes.object.isRequired,
+  isHistory: PropTypes.bool,
+  conversionRate: PropTypes.number.isRequired,
+  currencySymbol: PropTypes.string.isRequired,
+};
+
+// Account Card Component
 const AccountCard = ({
-  totalBalance,
-  dueDate,
+  totalBalance = 0,
+  dueDate = "",
   onPayNow,
   isCedi,
   toggleCurrency,
   conversionRate,
-  isLoadingRate, // Add this prop
+  isLoadingRate = false,
 }) => {
   const { width } = useWindowDimensions();
-  const displayAmount = isCedi
-    ? new Big(totalBalance).times(conversionRate).toFixed(2)
-    : totalBalance;
+  const displayAmount = useMemo(
+    () =>
+      isCedi
+        ? new Big(totalBalance || 0).times(conversionRate).toFixed(2)
+        : totalBalance || "0.00",
+    [isCedi, totalBalance, conversionRate]
+  );
 
   return (
     <LinearGradient
@@ -122,6 +149,8 @@ const AccountCard = ({
             <TouchableOpacity
               style={styles.currencySymbolRightIcon}
               onPress={toggleCurrency}
+              accessibilityLabel="Toggle currency"
+              accessibilityHint={`Switch to ${isCedi ? "USD" : "GHS"}`}
             >
               {isCedi ? (
                 <Text
@@ -134,12 +163,6 @@ const AccountCard = ({
               )}
             </TouchableOpacity>
           </View>
-          {isLoadingRate && (
-            <View style={styles.rateLoading}>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={styles.rateLoadingText}>Updating rate...</Text>
-            </View>
-          )}
         </View>
 
         <View style={styles.bottomRow}>
@@ -171,29 +194,40 @@ const AccountCard = ({
     </LinearGradient>
   );
 };
+
+AccountCard.propTypes = {
+  totalBalance: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  dueDate: PropTypes.string,
+  onPayNow: PropTypes.func.isRequired,
+  isCedi: PropTypes.bool.isRequired,
+  toggleCurrency: PropTypes.func.isRequired,
+  conversionRate: PropTypes.number.isRequired,
+  isLoadingRate: PropTypes.bool,
+};
+
 // Empty State Component
-const EmptyState = ({ type }) => {
-  return (
-    <View style={styles.emptyState}>
-      <Ionicons
-        name={
-          type === "upcoming" ? "calendar-outline" : "document-text-outline"
-        }
-        size={40}
-        color="#C5CEE0"
-      />
-      <Text style={styles.emptyStateText}>
-        No {type === "upcoming" ? "upcoming payments" : "payment history"}{" "}
-        matches your filters
-      </Text>
-    </View>
-  );
+const EmptyState = ({ type }) => (
+  <View style={styles.emptyState}>
+    <Ionicons
+      name={type === "upcoming" ? "calendar-outline" : "document-text-outline"}
+      size={40}
+      color="#C5CEE0"
+    />
+    <Text style={styles.emptyStateText}>
+      No {type === "upcoming" ? "upcoming payments" : "payment history"} matches
+      your filters
+    </Text>
+  </View>
+);
+
+EmptyState.propTypes = {
+  type: PropTypes.oneOf(["upcoming", "history"]).isRequired,
 };
 
 // Quick Action Button Component
 const ActionButton = ({ icon, label, onPress }) => {
   const { width } = useWindowDimensions();
-  const buttonWidth = (width - 60) / 3; // 60 = padding and gaps
+  const buttonWidth = (width - 60) / 3;
 
   return (
     <TouchableOpacity
@@ -201,11 +235,18 @@ const ActionButton = ({ icon, label, onPress }) => {
       onPress={onPress}
       accessibilityLabel={label}
       accessibilityHint={`Tap to view ${label.toLowerCase()}`}
+      accessibilityRole="button"
     >
       <Ionicons name={icon} size={24} color="#3372EF" />
       <Text style={styles.actionText}>{label}</Text>
     </TouchableOpacity>
   );
+};
+
+ActionButton.propTypes = {
+  icon: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
+  onPress: PropTypes.func.isRequired,
 };
 
 // Filter Modal Component
@@ -311,7 +352,6 @@ const FilterModal = ({
             >
               <Text style={styles.clearButtonText}>Clear Filters</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={styles.applyButton}
               onPress={onApply}
@@ -326,6 +366,19 @@ const FilterModal = ({
   );
 };
 
+FilterModal.propTypes = {
+  visible: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  paymentTypes: PropTypes.arrayOf(PropTypes.string).isRequired,
+  academicYears: PropTypes.arrayOf(PropTypes.string).isRequired,
+  selectedPaymentType: PropTypes.string.isRequired,
+  selectedAcademicYear: PropTypes.string.isRequired,
+  onSelectPaymentType: PropTypes.func.isRequired,
+  onSelectAcademicYear: PropTypes.func.isRequired,
+  onApply: PropTypes.func.isRequired,
+  onClear: PropTypes.func.isRequired,
+};
+
 // Main Finance Component
 const Finance = () => {
   const { width, height } = useWindowDimensions();
@@ -336,13 +389,19 @@ const Finance = () => {
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { notifications, announcements, unreadCount, fetchNotifications } =
+    useNotifications();
   const [paymentInProgress, setPaymentInProgress] = useState(false);
   const [isCedi, setIsCedi] = useState(false);
   const [exchangeRate, setExchangeRate] = useState(USD_TO_GHS_RATE);
   const [isLoadingRate, setIsLoadingRate] = useState(false);
+  const [lastRateUpdate, setLastRateUpdate] = useState(null);
+  const [showRateInfo, setShowRateInfo] = useState(false); // New state for rate info visibility
 
   const academicYears = ["2023-2024", "2024-2025", "2025-2026"];
   const paymentTypes = ["All", "Tuition", "Housing", "Books", "Fees"];
+
+  const router = useRouter();
 
   const fullPaymentHistory = [
     {
@@ -399,59 +458,60 @@ const Finance = () => {
     {
       id: 1,
       dueDate: "Feb 28, 2025",
-      amount: 1500.0,
+      amount: 90.0,
       type: "Tuition",
       academicYear: "2024-2025",
     },
     {
       id: 2,
       dueDate: "Feb 28, 2025",
-      amount: 750.0,
+      amount: 50.0,
       type: "Housing",
       academicYear: "2024-2025",
     },
     {
       id: 3,
       dueDate: "Feb 28, 2025",
-      amount: 250.0,
+      amount: 32.67,
       type: "Books",
       academicYear: "2024-2025",
     },
     {
       id: 4,
       dueDate: "Mar 15, 2025",
-      amount: 300.0,
+      amount: 100.0,
       type: "Fees",
       academicYear: "2024-2025",
     },
   ];
 
-  const [paymentHistory, setPaymentHistory] = useState(fullPaymentHistory);
-  const [upcomingPayments, setUpcomingPayments] =
-    useState(fullUpcomingPayments);
-
-  // Function to fetch exchange rate
-
-  const fetchWithRetry = async (url, maxRetries = 3) => {
+  const fetchWithRetry = async (url, options = {}, maxRetries = 3) => {
     for (let i = 0; i < maxRetries; i++) {
       try {
-        const response = await fetch(url);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: { apikey: API_KEY, ...(options.headers || {}) },
+        });
+        clearTimeout(timeoutId);
         if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-        return response;
+        return await response.json();
       } catch (error) {
-        if (i === maxRetries - 1) {
-          throw error; // Throw on last retry
-        }
+        if (error.name === "AbortError" || i === maxRetries - 1) throw error;
         await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
       }
     }
-    throw new Error("All retries failed"); // Ensure a return or throw
   };
 
-  const fetchExchangeRate = async (from = "USD", to = "GHS") => {
+  const fetchExchangeRate = useCallback(async (from, to) => {
     if (!API_KEY) {
       console.error("Exchange rate API key is missing");
       setExchangeRate(USD_TO_GHS_RATE);
+      setLastRateUpdate("Default");
+      setShowRateInfo(true); // Show the rate info
+      setTimeout(() => setShowRateInfo(false), 5000); // Hide after 5 seconds
       Alert.alert(
         "Configuration Error",
         "API key is missing. Using default rate."
@@ -460,55 +520,53 @@ const Finance = () => {
     }
 
     setIsLoadingRate(true);
-    let cacheTime;
     try {
       const cachedRate = await AsyncStorage.getItem("exchangeRate");
-      cacheTime = await AsyncStorage.getItem("exchangeRateTime");
+      const cacheTime = await AsyncStorage.getItem("exchangeRateTime");
       const isFresh = cacheTime && Date.now() - parseInt(cacheTime) < 3600000;
 
       if (cachedRate && isFresh) {
         setExchangeRate(parseFloat(cachedRate));
+        setLastRateUpdate(new Date(parseInt(cacheTime)).toLocaleString());
+        setIsLoadingRate(false);
+        setShowRateInfo(true); // Show the rate info
+        setTimeout(() => setShowRateInfo(false), 5000); // Hide after 5 seconds
         return;
       }
 
-      const response = await fetchWithRetry(`${API_URL}/${from}/${to}`);
-      const data = await response.json();
-
+      const data = await fetchWithRetry(`${API_URL}/${from}/${to}`);
       if (data.result === "success") {
-        setExchangeRate(data.conversion_rate);
-        await AsyncStorage.setItem(
-          "exchangeRate",
-          data.conversion_rate.toString()
-        );
+        const newRate = data.conversion_rate;
+        setExchangeRate(newRate);
+        setLastRateUpdate(new Date().toLocaleString());
+        await AsyncStorage.setItem("exchangeRate", newRate.toString());
         await AsyncStorage.setItem("exchangeRateTime", Date.now().toString());
+        setShowRateInfo(true); // Show the rate info
+        setTimeout(() => setShowRateInfo(false), 5000); // Hide after 5 seconds
       } else {
         throw new Error("API response unsuccessful");
       }
     } catch (error) {
       console.error("Exchange rate fetch failed:", error);
       setExchangeRate(USD_TO_GHS_RATE);
-      Alert.alert(
-        "Rate Update Failed",
-        `Using cached rate. Last updated: ${
-          cacheTime ? new Date(parseInt(cacheTime)).toLocaleTimeString() : "N/A"
-        }`
-      );
+      setLastRateUpdate("Default rate");
+      setShowRateInfo(true); // Show the rate info
+      setTimeout(() => setShowRateInfo(false), 5000); // Hide after 5 seconds
+      Alert.alert("Rate Update Failed", "Using default rate.");
     } finally {
       setIsLoadingRate(false);
     }
-  };
+  }, []);
 
-  const toggleCurrency = () => {
+  const toggleCurrency = useCallback(async () => {
     const newIsCedi = !isCedi;
     setIsCedi(newIsCedi);
     if (newIsCedi) {
-      fetchExchangeRate("USD", "GHS");
+      const cacheTime = await AsyncStorage.getItem("exchangeRateTime");
+      const isFresh = cacheTime && Date.now() - parseInt(cacheTime) < 3600000;
+      if (!isFresh) await fetchExchangeRate("USD", "GHS");
     }
-  };
-
-  useEffect(() => {
-    fetchExchangeRate("USD", "GHS");
-  }, []);
+  }, [isCedi, fetchExchangeRate]);
 
   const filteredHistory = useMemo(() => {
     return fullPaymentHistory.filter((payment) => {
@@ -530,78 +588,91 @@ const Finance = () => {
 
   const totalBalanceDue = useMemo(() => {
     return fullUpcomingPayments
-      .reduce((sum, payment) => sum + payment.amount, 0)
+      .reduce(
+        (sum, payment) =>
+          sum + (typeof payment.amount === "number" ? payment.amount : 0),
+        0
+      )
       .toFixed(2);
   }, [fullUpcomingPayments]);
+
+  const [paymentHistory, setPaymentHistory] = useState(filteredHistory);
+  const [upcomingPayments, setUpcomingPayments] = useState(filteredUpcoming);
 
   useEffect(() => {
     setPaymentHistory(filteredHistory);
     setUpcomingPayments(filteredUpcoming);
   }, [filteredHistory, filteredUpcoming]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
+    try {
+      await fetchExchangeRate("USD", "GHS");
+    } catch (error) {
+      console.error("Error during refresh:", error);
+    } finally {
       setRefreshing(false);
-    }, 1500);
-  }, []);
+    }
+  }, [fetchExchangeRate]);
 
-  const handleLogout = () => {
-    setLogoutModalVisible(true);
-  };
-
-  const confirmLogout = () => {
+  const handleLogout = useCallback(() => setLogoutModalVisible(true), []);
+  const confirmLogout = useCallback(() => {
     setLogoutModalVisible(false);
     console.log("User logged out");
-  };
-
-  const cancelLogout = () => {
+  }, []);
+  const cancelLogout = useCallback(() => {
     setLogoutModalVisible(false);
     console.log("Logout cancelled");
-  };
-
-  const applyFilters = () => {
-    setFilterModalVisible(false);
-  };
-
-  const clearFilters = () => {
+  }, []);
+  const applyFilters = useCallback(() => setFilterModalVisible(false), []);
+  const clearFilters = useCallback(() => {
     setSelectedPaymentType("All");
     setSelectedAcademicYear("2024-2025");
-  };
-
-  const handlePayNow = () => {
+  }, []);
+  const handlePayNow = useCallback(() => {
     setPaymentInProgress(true);
     setTimeout(() => {
       setPaymentInProgress(false);
-      alert("Payment processed successfully!");
+      Alert.alert("Success", "Payment processed successfully!");
     }, 2000);
-  };
+  }, []);
+  const handleViewStatements = useCallback(
+    () => console.log("View statements"),
+    []
+  );
+  const handlePaymentPlan = useCallback(
+    () => console.log("View payment plan"),
+    []
+  );
+  const handlePaymentMethods = useCallback(
+    () => console.log("View payment methods"),
+    []
+  );
 
-  const handleViewStatements = () => {
-    console.log("View statements");
-  };
-
-  const handlePaymentPlan = () => {
-    console.log("View payment plan");
-  };
-
-  const handlePaymentMethods = () => {
-    console.log("View payment methods");
-  };
-
-  const renderPaymentItem = ({ item }) => (
-    <PaymentItem
-      payment={item}
-      isHistory={activeTab === "history"}
-      currencySymbol={isCedi ? "₵" : "$"}
-      conversionRate={exchangeRate}
-    />
+  const renderPaymentItem = useCallback(
+    ({ item }) => (
+      <PaymentItem
+        payment={item}
+        isHistory={activeTab === "history"}
+        currencySymbol={isCedi ? "₵" : "$"}
+        conversionRate={isCedi ? exchangeRate : 1}
+      />
+    ),
+    [activeTab, isCedi, exchangeRate]
   );
 
   const headerHeight =
     Platform.OS === "ios"
       ? height * 0.13
       : StatusBar.currentHeight + height * 0.08;
+
+  const renderGlobalRateIndicator = () =>
+    isLoadingRate ? (
+      <View style={styles.globalRateIndicator}>
+        <ActivityIndicator size="small" color="#3372EF" />
+        <Text style={styles.globalRateText}>Updating exchange rate...</Text>
+      </View>
+    ) : null;
 
   return (
     <View style={styles.container}>
@@ -624,9 +695,18 @@ const Finance = () => {
             <View style={styles.headerIcons}>
               <Pressable
                 style={styles.iconButton}
-                accessibilityLabel="Notifications"
+                onPress={() => router.push("/screens/notifications")}
               >
-                <BellIcon />
+                <View>
+                  <BellIcon />
+                  {unreadCount > 0 && (
+                    <View style={styles.notificationBadge}>
+                      <Text style={styles.notificationCount}>
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </Pressable>
               <Pressable
                 style={styles.iconButton}
@@ -643,6 +723,8 @@ const Finance = () => {
           </View>
         </SafeAreaView>
       </LinearGradient>
+
+      {renderGlobalRateIndicator()}
 
       <ScrollView
         style={styles.scrollView}
@@ -677,8 +759,19 @@ const Finance = () => {
           isCedi={isCedi}
           toggleCurrency={toggleCurrency}
           conversionRate={exchangeRate}
-          isLoadingRate={isLoadingRate} // Pass the loading state
+          isLoadingRate={isLoadingRate}
         />
+
+        {isCedi && showRateInfo && lastRateUpdate && (
+          <View style={styles.rateInfoContainer}>
+            <Text style={styles.rateInfoText}>
+              Exchange Rate: 1 USD = {exchangeRate.toFixed(2)} GHS
+            </Text>
+            <Text style={styles.rateUpdateText}>
+              Last updated: {lastRateUpdate}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.quickActions}>
           <ActionButton
@@ -776,6 +869,8 @@ const Finance = () => {
                 renderItem={renderPaymentItem}
                 keyExtractor={(item) => item.id.toString()}
                 scrollEnabled={false}
+                initialNumToRender={10}
+                windowSize={5}
               />
             ) : (
               <EmptyState type="history" />
@@ -806,20 +901,19 @@ const Finance = () => {
   );
 };
 
-export default Finance;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F7F9FC",
+    paddingBottom: "10%",
   },
   header: {
-    justifySelf: "flex-end", // Align content to bottom of header
-    alignContent: 'flex-end',
+    justifySelf: "flex-end",
+    alignContent: "flex-end",
   },
   safeHeader: {
     width: "100%",
-    justifyContent:"center",
+    justifyContent: "center",
   },
   headerContent: {
     flexDirection: "row",
@@ -837,16 +931,6 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   iconButton: {
-    padding: 5,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
-  },
-  logoutButton: {
     padding: 5,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 20,
@@ -882,10 +966,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 10, // Android shadow
+    elevation: 10,
   },
-
-  // Decorative elements
   cardDecoration: {
     position: "absolute",
     top: 0,
@@ -911,8 +993,6 @@ const styles = StyleSheet.create({
     bottom: -100,
     left: -80,
   },
-
-  // Card content
   cardContent: {
     flex: 1,
     justifyContent: "space-between",
@@ -927,25 +1007,18 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 6,
   },
-
   currencySymbolRight: {
     position: "absolute",
     right: 10,
-    backgroundColor: "rgba(255, 255, 255,0.3)",
-    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 20,
     paddingHorizontal: 8,
     width: 40,
     height: 40,
-    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
   },
-
   currencySymbolRightIcon: {
-    position: "absolute",
-    right: -5,
-    borderRadius: 10,
-    paddingHorizontal: 8,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -953,7 +1026,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(104, 101, 101, 0.43)",
   },
-
   cardDescription: {
     fontSize: 14,
     fontWeight: "500",
@@ -978,29 +1050,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#fff",
   },
-  detailsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
-  detailLabel: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.85)",
-    fontWeight: "500",
-    marginLeft: 6,
-    marginRight: 4,
-  },
-  detailText: {
-    fontSize: 13,
-    color: "#fff",
-    fontWeight: "600",
-  },
-
-  // Bottom section
   bottomRow: {
     alignItems: "flex-end",
     justifyContent: "flex-end",
@@ -1026,8 +1075,6 @@ const styles = StyleSheet.create({
   buttonIcon: {
     marginLeft: 2,
   },
-
-  // Logo section
   logoContainer: {
     position: "absolute",
     bottom: -16,
@@ -1306,19 +1353,34 @@ const styles = StyleSheet.create({
     color: "#333",
     fontWeight: "500",
   },
-  rateLoading: {
-    position: "absolute",
-    right: 60,
-    top: 10,
+  globalRateIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    padding: 5,
-    borderRadius: 5,
+    justifyContent: "center",
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginHorizontal: 20,
+    marginTop: 10,
   },
-  rateLoadingText: {
-    color: "#fff",
+  globalRateText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: "#3372EF",
+  },
+  rateInfoContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  rateInfoText: {
+    fontSize: 14,
+    color: "#555",
+  },
+  rateUpdateText: {
     fontSize: 12,
-    marginLeft: 5,
+    color: "#777",
+    marginTop: 4,
   },
 });
+
+export default Finance;

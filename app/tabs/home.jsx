@@ -11,10 +11,10 @@ import {
   Image,
   RefreshControl,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { LinearGradient } from Tertiary
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import BellIcon from "../../assets/SVG/bell"; // Ensure path is correct
+import BellIcon from "../../assets/SVG/bell";
 import GpaIcon from "../../assets/SVG/GpaIcon";
 import CreditsIcon from "../../assets/SVG/CreditsIcon";
 import ConfirmationModal from "../components/ConfirmationModal";
@@ -81,7 +81,7 @@ const QuickAccess = React.memo(({ title, icon, BgColor, color }) => {
         </View>
         <Text style={styles.courseCardTitle}>{title}</Text>
         <View style={styles.courseCardArrow}>
-          <Ionicons name="chevron-forward" size={20} color="rgba(0,0,0,0.5)" />
+          <Ionicons name="chevron-forward" size={20} color="RGBA(0,0,0,0.5)" />
         </View>
       </View>
     </Pressable>
@@ -101,8 +101,14 @@ const StatCard = React.memo(({ icon, label, value, bgColor }) => (
 ));
 
 export default function HomeScreen() {
-  const { signOut, user, studentProfile, fetchStudentProfile, mountedCourses } =
-    useAuth();
+  const {
+    signOut,
+    user,
+    studentProfile,
+    fetchStudentProfile,
+    mountedCourses,
+    profileImage,
+  } = useAuth();
   const { notifications, announcements, unreadCount, fetchNotifications } =
     useNotifications();
   const router = useRouter();
@@ -177,6 +183,21 @@ export default function HomeScreen() {
     return userTitle ? `${userTitle} ${displayName}` : displayName;
   }, [userTitle, displayName]);
 
+  const fallbackName = useMemo(() => {
+    return (
+      (studentProfile?.first_name && studentProfile?.last_name
+        ? `${studentProfile.first_name} ${studentProfile.last_name}`
+        : null) ||
+      user?.user_metadata?.full_name ||
+      user?.email?.split("@")[0] ||
+      "Student"
+    );
+  }, [studentProfile, user]);
+
+  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    fallbackName
+  )}&background=0D8ABC&color=fff&size=128`;
+
   if (!user) {
     router.replace("/");
     return null;
@@ -201,7 +222,9 @@ export default function HomeScreen() {
             <View style={styles.leftHeader}>
               <View style={styles.profileImageContainer}>
                 <Image
-                  source={require("../../assets/images/profileSample.jpg")}
+                  source={
+                    profileImage ? { uri: profileImage } : { uri: avatarUrl }
+                  }
                   style={styles.profileImage}
                 />
               </View>
@@ -348,7 +371,7 @@ const styles = StyleSheet.create({
   profileImage: {
     width: "100%",
     height: "100%",
-    objectFit: "cover",
+    resizeMode: "cover",
   },
   greetings: {
     marginLeft: 16,
@@ -534,7 +557,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   coursesContainer: {
-    marginBottom: 12,
+    marginBottom: 45,
   },
   courseCard: {
     marginBottom: 12,
@@ -556,6 +579,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
+    borderBottomWidth: 0.3,
+    borderColor: "rgba(0, 0, 0, 0.1)",
   },
   courseIconContainer: {
     width: 40,
