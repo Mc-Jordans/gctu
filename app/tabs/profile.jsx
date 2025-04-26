@@ -10,13 +10,14 @@ import {
   RefreshControl,
   Dimensions,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import BellIcon from "../../assets/SVG/bell";
 import ConfirmationModal from "../components/ConfirmationModal";
-import * as ImagePicker from "expo-image-picker";
-import { supabase } from "../lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationsContext";
 import { useRouter } from "expo-router";
@@ -46,82 +47,45 @@ const Profile = () => {
 
   const scrollViewRef = useRef(null);
 
-  const fallbackName =
+  // Debug user state
+  if (!user) {
+    console.log("Profile render - user is undefined");
+  } else {
+    console.log("Profile render - user email:", user.email);
+  }
+
+  // Use first and last name for displayName and avatar
+  const displayName =
     studentProfile?.first_name && studentProfile?.last_name
       ? `${studentProfile.first_name} ${studentProfile.last_name}`
-      : user?.user_metadata?.full_name ||
-        user?.email?.split("@")[0] ||
-        "Student";
+      : user?.email
+        ? user.email.split("@")[0]
+        : "Student";
+
+  // Ensure avatar uses both first and last names
+  const avatarName =
+    studentProfile?.first_name && studentProfile?.last_name
+      ? `${studentProfile.first_name}+${studentProfile.last_name}`
+      : studentProfile?.first_name
+        ? studentProfile.first_name
+        : displayName;
+
+  // Debug avatar name
+  console.log("Avatar name:", avatarName);
 
   const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    fallbackName
+    avatarName
   )}&background=298CFE&color=fff&size=128`;
-
-  const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      const imageUri = result.assets[0].uri;
-      setProfileImage(imageUri); // Immediate UI feedback
-
-      try {
-        const fileExt = imageUri.split(".").pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-        const filePath = `profile-images/${fileName}`;
-
-        const response = await fetch(imageUri);
-        const blob = await response.blob();
-
-        const { error: uploadError } = await supabase.storage
-          .from("avatars")
-          .upload(filePath, blob, {
-            contentType: `image/${fileExt}`,
-            upsert: true,
-          });
-
-        if (uploadError) {
-          console.error("Upload error:", uploadError.message);
-          Alert.alert("Upload Error", "Failed to upload image to storage.");
-          return;
-        }
-
-        const { data: urlData } = supabase.storage
-          .from("avatars")
-          .getPublicUrl(filePath);
-
-        const imageUrl = urlData.publicUrl;
-
-        const { error: updateError } = await supabase
-          .from("students")
-          .update({ profile_image_url: imageUrl })
-          .eq("id", user.id);
-
-        if (updateError) {
-          console.error("Update error:", updateError.message);
-          Alert.alert("Database Error", "Failed to save image URL to profile.");
-          return;
-        }
-
-        setProfileImage(imageUrl);
-      } catch (error) {
-        console.error("Image upload error:", error.message);
-        Alert.alert("Error", "Something went wrong during image upload.");
-      }
-    }
-  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (user) {
-        await fetchStudentProfile(user.id);
-        await fetchNotifications();
-        await fetchAnnouncements();
+      if (user?.id) {
+        await Promise.all([
+          fetchStudentProfile(user.id),
+          fetchNotifications(),
+          fetchAnnouncements(),
+        ]);
       }
     } catch (error) {
       console.error("Error refreshing data:", error.message);
@@ -144,29 +108,25 @@ const Profile = () => {
     }
   };
 
-  const responsiveFontSize = (baseSize) => {
-    const scaleFactor = Math.min(width / 380, 1.2);
-    return Math.round(baseSize * scaleFactor);
-  };
-
   const handleLogout = () => {
     setModalVisible(true);
   };
 
   const confirmLogout = async () => {
     try {
+      console.log("Attempting logout...");
       await signOut();
+      console.log("signOut completed");
       setModalVisible(false);
+      // Clear any stored auth data
+      await AsyncStorage.removeItem("authToken");
+      // Use replace to prevent going back to the profile screen
       router.replace("/");
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error("Logout error:", error.message);
+      Alert.alert("Error", "Failed to log out. Please try again.");
     }
   };
-
-  const displayName =
-    studentProfile?.first_name && studentProfile?.last_name
-      ? `${studentProfile.first_name} ${studentProfile.last_name}`
-      : user?.user_metadata?.full_name || "Student";
 
   const renderCardContent = (title) => {
     switch (title) {
@@ -305,6 +265,15 @@ const Profile = () => {
     },
   ];
 
+  // Guard against missing user
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.profileName}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.profileSection}>
@@ -344,12 +313,6 @@ const Profile = () => {
               source={profileImage ? { uri: profileImage } : { uri: avatarUrl }}
               style={styles.profileImage}
             />
-            <TouchableOpacity
-              style={styles.editImageButton}
-              onPress={pickImage}
-            >
-              <Feather name="camera" size={16} color="#FFF" />
-            </TouchableOpacity>
           </View>
           <Text style={styles.profileName}>{displayName}</Text>
           <View style={styles.profileBadge}>
@@ -497,19 +460,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.8)",
     resizeMode: "cover",
   },
-  editImageButton: {
-    position: "absolute",
-    bottom: 5,
-    right: 5,
-    backgroundColor: "#298CFE",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFF",
-  },
   profileName: {
     fontSize: 26,
     fontWeight: "bold",
@@ -589,6 +539,8 @@ const styles = StyleSheet.create({
   },
   cardsContainer: {
     paddingHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 10,
   },
   cardWrapper: {
     marginBottom: 16,

@@ -36,7 +36,7 @@ const StudentAction = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#003366" />
+      <StatusBar translucent={true} barStyle="light-content" backgroundColor="#003366" />
       {/* Header covering status bar */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Student Action</Text>

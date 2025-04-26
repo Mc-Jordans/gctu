@@ -141,17 +141,30 @@ export const AuthProvider = ({ children }) => {
   const signOut = async () => {
     setLoading(true);
     try {
+      // Clear all local states first
+      setUser(null);
+      setSession(null);
+      setStudentProfile(null);
+      setMountedCourses([]);
+      setProfileImage(null);
+
+      // Then sign out from Supabase
       const { error } = await supabase.auth.signOut();
       if (error) {
+        console.error("Logout error:", error.message);
         Alert.alert("Logout Failed", error.message);
-      } else {
-        setUser(null);
-        setSession(null);
-        setStudentProfile(null);
-        setMountedCourses([]);
-        setProfileImage(null);
+        // Restore states if logout failed
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setSession(session);
+          setUser(session.user);
+          if (session.user) {
+            await fetchStudentProfile(session.user.id);
+          }
+        }
       }
     } catch (error) {
+      console.error("Logout error:", error.message);
       Alert.alert("Logout Error", error.message);
     } finally {
       setLoading(false);

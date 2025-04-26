@@ -10,8 +10,9 @@ import {
   Dimensions,
   Image,
   RefreshControl,
+  Alert,
 } from "react-native";
-import { LinearGradient } from Tertiary
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import BellIcon from "../../assets/SVG/bell";
@@ -161,6 +162,7 @@ export default function HomeScreen() {
       router.replace("/");
     } catch (error) {
       console.error("Logout error:", error);
+      Alert.alert("Error", "Failed to log out. Please try again.");
     }
   };
 
